@@ -1,0 +1,31 @@
+name: CI
+on:
+  push:
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  python:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - run: pip install -r requirements.txt pytest ruff
+      - run: ruff check .
+      - run: python -m pytest -q
+  shell:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: shellcheck -x install.sh check.sh host/bin/valheim-monthly-update
+  compose:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Compose files resolve with the example settings
+        run: |
+          cp .env.example .env && cp secrets.env.example secrets.env
+          docker compose config --quiet
+          cd valheim && cp .env.example .env && docker compose config --quiet
