@@ -1,6 +1,6 @@
 [project]
 name = "valheim-discord-whitelist"
-version = "1.0.0"
+version = "1.1.0"
 description = "Discord bot for a Valheim dedicated server: live status and a Discord-verified whitelist"
 requires-python = ">=3.13"
 license = "GPL-3.0-or-later"

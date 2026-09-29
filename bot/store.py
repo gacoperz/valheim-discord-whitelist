@@ -30,9 +30,10 @@ SCHEMA = """
 CREATE TABLE IF NOT EXISTS state (k TEXT PRIMARY KEY, v TEXT);
 CREATE TABLE IF NOT EXISTS sessions (
     id INTEGER PRIMARY KEY, name TEXT NOT NULL, steamid TEXT,
-    start INTEGER NOT NULL, end INTEGER
+    start INTEGER NOT NULL, end INTEGER,
+    zdo_user TEXT  -- the connection's ZDO user id from "Got character ZDOID from <name> : <user>:<n>"
 );
-CREATE TABLE IF NOT EXISTS deaths (id INTEGER PRIMARY KEY, name TEXT NOT NULL, ts INTEGER NOT NULL);
+CREATE TABLE IF NOT EXISTS deaths (id INTEGER PRIMARY KEY, name TEXT NOT NULL, ts INTEGER NOT NULL, steamid TEXT);
 CREATE INDEX IF NOT EXISTS sessions_open ON sessions(end);
 CREATE TABLE IF NOT EXISTS join_attempts (
     id INTEGER PRIMARY KEY, ts INTEGER NOT NULL, steamid TEXT NOT NULL,
@@ -86,6 +87,8 @@ def connect(path: str) -> sqlite3.Connection:
 
 @dataclass(frozen=True)
 class PlayerStats:
+    """One character: a character name played from one Steam account (steamid None = account unknown)."""
+    steamid: str | None
     name: str
     playtime: int  # seconds
     sessions: int
@@ -99,6 +102,28 @@ class Store:
     def __init__(self, db: sqlite3.Connection):
         self.db = db
         db.executescript(SCHEMA)
+        self._migrate()
+
+    def _migrate(self) -> None:
+        """Databases from before v1.1.0: sessions don't record the ZDO user id, and deaths have no Steam ID,
+        which is filled in from the session of that character that was open at the time."""
+        if "zdo_user" not in self._columns("sessions"):
+            with self.db:
+                self.db.execute("ALTER TABLE sessions ADD COLUMN zdo_user TEXT")
+        if "steamid" in self._columns("deaths"):
+            return
+        with self.db:
+            self.db.execute("ALTER TABLE deaths ADD COLUMN steamid TEXT")
+            self.db.execute("""
+                UPDATE deaths SET steamid = (
+                    SELECT sessions.steamid FROM sessions
+                    WHERE sessions.name = deaths.name AND sessions.start <= deaths.ts
+                      AND (sessions.end IS NULL OR sessions.end >= deaths.ts)
+                    ORDER BY sessions.start DESC LIMIT 1)
+            """)
+
+    def _columns(self, table: str) -> list[str]:
+        return [row["name"] for row in self.db.execute(f"PRAGMA table_info({table})")]
 
     # ---- key/value state ----
     # Values are stored as JSON, so anything JSON-serialisable works.
@@ -161,12 +186,14 @@ class Store:
         elif match := RE_HANDSHAKE.search(line):
             pending.append(match[1])
         elif match := RE_ZDOID.search(line):
-            name, user_id = match[1].strip(), match[2]
+            name, user_id = match[1].strip(), match[2]  # user_id: same across respawns, differs between players
             if user_id == DEAD_ZDOID_USER:
-                self.db.execute("INSERT INTO deaths (name, ts) VALUES (?, ?)", (name, ts))
-            elif not self._has_open_session(name):  # a respawn repeats the line; only the first one starts a session
+                self.db.execute("INSERT INTO deaths (name, ts, steamid) VALUES (?, ?, ?)",
+                                (name, ts, self._open_session_steamid(name)))
+            elif not self._has_open_session(name, user_id):  # a respawn repeats the line with the same user id
                 steamid = pending.pop(0) if pending else None
-                self.db.execute("INSERT INTO sessions (name, steamid, start) VALUES (?, ?, ?)", (name, steamid, ts))
+                self.db.execute("INSERT INTO sessions (name, steamid, start, zdo_user) VALUES (?, ?, ?, ?)",
+                                (name, steamid, ts, user_id))
         elif match := RE_CLOSE.search(line):
             steamid = match[1]
             if steamid in pending:  # disconnected before getting a character (e.g. not whitelisted)
@@ -184,8 +211,18 @@ class Store:
         return self.db.execute("SELECT 1 FROM join_attempts WHERE steamid=? AND ts >= ?",
                                (steamid, ts - REFUSAL_WINDOW)).fetchone() is not None
 
-    def _has_open_session(self, name: str) -> bool:
-        return self.db.execute("SELECT 1 FROM sessions WHERE name=? AND end IS NULL", (name,)).fetchone() is not None
+    def _open_session_steamid(self, name: str) -> str | None:
+        """Steam ID of the character's open session (the newest, if two players share the name)."""
+        row = self.db.execute("SELECT steamid FROM sessions WHERE name=? AND end IS NULL ORDER BY start DESC",
+                              (name,)).fetchone()
+        return row["steamid"] if row else None
+
+    def _has_open_session(self, name: str, user_id: str) -> bool:
+        """Is this character already in a session on this connection? Two players may share a character name, so
+        the ZDO user id tells them apart. Sessions opened before v1.1.0 have none and match by name."""
+        return self.db.execute(
+            "SELECT 1 FROM sessions WHERE name=? AND end IS NULL AND (zdo_user = ? OR zdo_user IS NULL)",
+            (name, user_id)).fetchone() is not None
 
     def _close_open_sessions(self, ts: int) -> int:
         return self.db.execute("UPDATE sessions SET end=? WHERE end IS NULL", (ts,)).rowcount
@@ -221,35 +258,38 @@ class Store:
             total += span_end - span_start
         return total
 
-    def stats(self, name: str | None = None) -> list[PlayerStats]:
-        """Per-character stats, most playtime first; `name` (case-insensitive) limits it to one character."""
+    def stats(self, name: str | None = None, steamid: str | None = None) -> list[PlayerStats]:
+        """Per-character stats, most playtime first. A character is a name played from one Steam account, so two
+        players who both call their character "Bob" are counted apart. `name` (case-insensitive) and `steamid`
+        narrow it down."""
         rows = self.db.execute(
             """
-            WITH names AS (SELECT name FROM sessions UNION SELECT name FROM deaths),
+            WITH characters AS (SELECT steamid, name FROM sessions UNION SELECT steamid, name FROM deaths),
             played AS (
-                SELECT name,
+                SELECT steamid, name,
                        SUM(COALESCE(end, :now) - start) AS playtime,
                        COUNT(*)                          AS sessions,
                        MAX(COALESCE(end, :now))          AS last_seen,
                        SUM(end IS NULL) > 0              AS online,
                        MIN(start)                        AS first_seen
-                FROM sessions GROUP BY name
+                FROM sessions GROUP BY steamid, name
             ),
-            died AS (SELECT name, COUNT(*) AS deaths FROM deaths GROUP BY name)
-            SELECT names.name,
+            died AS (SELECT steamid, name, COUNT(*) AS deaths FROM deaths GROUP BY steamid, name)
+            SELECT characters.steamid, characters.name,
                    COALESCE(played.playtime, 0) AS playtime,
                    COALESCE(played.sessions, 0) AS sessions,
                    COALESCE(died.deaths, 0)     AS deaths,
                    played.last_seen,
                    COALESCE(played.online, 0)   AS online,
                    played.first_seen
-            FROM names
-            LEFT JOIN played USING (name)
-            LEFT JOIN died USING (name)
-            WHERE :name IS NULL OR names.name = :name COLLATE NOCASE
-            ORDER BY playtime DESC, names.name
+            FROM characters
+            LEFT JOIN played ON played.name = characters.name AND played.steamid IS characters.steamid
+            LEFT JOIN died ON died.name = characters.name AND died.steamid IS characters.steamid
+            WHERE (:name IS NULL OR characters.name = :name COLLATE NOCASE)
+              AND (:steamid IS NULL OR characters.steamid = :steamid)
+            ORDER BY playtime DESC, characters.name, characters.steamid
             """,
-            {"now": int(time.time()), "name": name},
+            {"now": int(time.time()), "name": name, "steamid": steamid},
         )
         players = []
         for row in rows:
@@ -257,18 +297,6 @@ class Store:
             values["online"] = bool(values["online"])  # SQLite returns 0/1
             players.append(PlayerStats(**values))
         return players
-
-    def player(self, name: str) -> PlayerStats | None:
-        """One character's stats (name is case-insensitive), or None if it has never played."""
-        rows = self.stats(name)
-        return rows[0] if rows else None
-
-    def names_for_steam(self, steamid: str) -> list[str]:
-        """Character names played from this Steam account, most recent first."""
-        rows = self.db.execute(
-            "SELECT name FROM sessions WHERE steamid=? GROUP BY name ORDER BY MAX(start) DESC", (steamid,)
-        )
-        return [row["name"] for row in rows]
 
     def names(self) -> list[str]:
         rows = self.db.execute("SELECT name FROM sessions UNION SELECT name FROM deaths ORDER BY 1")

@@ -16,7 +16,7 @@ Steam IDs around.
 - **Hardened by default:** unprivileged read-only container, the game's whitelist file is the only thing it
   writes, and admin commands are checked at run time.
 
-It works with [lloesche/valheim-server](https://github.com/lloesche/valheim-server-docker) and runs on one
+It works with the [valheim-server](https://github.com/community-valheim-tools/valheim-server-docker) Docker image and runs on one
 Debian or Ubuntu machine with Docker. `install.sh` sets up the game server, the bot and HTTPS, and can harden
 the host (firewall, fail2ban, backups).
 
@@ -78,9 +78,11 @@ hand them to anyone else.
 | Command | What it does |
 |---|---|
 | `/setup-dashboard` | Posts the dashboard in this channel (pin it). Running it again moves it; there is one dashboard. |
-| `/whitelist-admin list` | Everyone on the whitelist, with Discord user or note, date added, and when they last played. |
+| `/whitelist-admin list` | Everyone on the whitelist, with Discord user or note, date added, and when they last played; then everyone who is banned. |
 | `/whitelist-admin add steamid:<SteamID64> note:<who>` | Whitelist someone without Discord. Manual entries are never removed automatically. |
-| `/whitelist-admin remove member:@someone` / `steamid:<id>` | Remove an entry. |
+| `/whitelist-admin remove member:@someone` / `steamid:<id>` | Remove an entry. They can join again themselves. |
+| `/whitelist-admin ban member:@someone` / `steamid:<id>` `reason:` | Remove them **and block them from joining again**. Banning a member also blocks their Discord account, so a second Steam account doesn't get them back in. |
+| `/whitelist-admin unban steamid:<id>` (or `member:`) | Lift a ban. They aren't re-added; they can click *Join whitelist* again. |
 | `/whitelist-admin history` | The last 20 changes: when, what, which Steam ID, and who did it. |
 | `/whitelist-admin attempts` | The last 20 failed joins: not whitelisted, wrong game version, kicked, or dropped. |
 
@@ -98,7 +100,7 @@ hand them to anyone else.
 
 ## Credits
 This bot stands on these projects:
-- [lloesche/valheim-server-docker](https://github.com/lloesche/valheim-server-docker): the Valheim server image,
+- [valheim-server-docker](https://github.com/community-valheim-tools/valheim-server-docker) (originally by lloesche): the Valheim server image,
   including the log hooks the bot reads its events from (Apache-2.0)
 - [discord.py](https://github.com/Rapptz/discord.py) (MIT) and [aiohttp](https://github.com/aio-libs/aiohttp)
   (Apache-2.0)

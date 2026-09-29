@@ -14,6 +14,8 @@ The bot controls who may join a game server that may have **no password**, so it
 - The game's `permittedlist.txt` is never left empty; Valheim treats an empty list as "everyone may join". The
   bot writes a placeholder when nobody is on it, and protected owner IDs are always written.
 - It is the only game file the bot can write, through the file's group. Everything else is mounted read-only.
+- Bans stick: a banned Steam account or Discord user can't be linked or added again until an admin unbans them.
+  The check is in the whitelist code itself, so no command, button or login path can get around it.
 
 **Discord**
 - Everything is refused outside the Discord servers in `ALLOWED_GUILDS`, including commands, buttons and whitelist

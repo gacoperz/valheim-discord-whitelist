@@ -188,5 +188,5 @@ def test_every_admin_command_is_protected():
 
     assert isinstance(whitelist_admin, ManageServerGroup)
     assert sorted(command.name for command in whitelist_admin.commands) == [
-        "add", "attempts", "history", "list", "remove"]
+        "add", "attempts", "ban", "history", "list", "remove", "unban"]
     assert setup_dashboard.checks  # has_permissions(manage_guild=True)

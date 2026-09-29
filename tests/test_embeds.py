@@ -72,3 +72,32 @@ def test_hints_at_a_different_steam_account(store, tmp_path):
     text = join_diagnosis(store, entry(added_at=1000))
     assert "**Alice Viking**" in text and "different Steam account" in text
     assert STRANGER not in text  # other people's Steam IDs are not shown to players
+
+
+def test_my_stats_never_shows_another_players_character_with_the_same_name(store, tmp_path):
+    from bot.embeds import my_stats_reply
+    from bot.whitelist import Whitelist
+    ingest(store, tmp_path,
+           f"100 Got handshake from client {ALICE}", "110 Got character ZDOID from Bob : 5:1",
+           f"200 Closing socket {ALICE}",
+           f"300 Got handshake from client {STRANGER}", "310 Got character ZDOID from Bob : 6:1",
+           f"900 Closing socket {STRANGER}")
+    listfile = tmp_path / "permittedlist.txt"
+    listfile.write_text("")
+    whitelist = Whitelist(store.db, str(listfile))
+    whitelist.link(42, "alice", 1, ALICE, "AliceSteam")
+    [embed] = my_stats_reply(store, whitelist, 42)["embeds"]
+    assert embed.fields[0].value == "1m"  # Alice's Bob played 90 s, not the stranger's 590 s
+
+
+def test_leaderboard_labels_shared_names_with_the_steam_id_end(store, tmp_path):
+    from types import SimpleNamespace
+
+    from bot.embeds import leaderboard_reply
+    ingest(store, tmp_path,
+           f"100 Got handshake from client {ALICE}", "110 Got character ZDOID from Bob : 5:1",
+           f"300 Got handshake from client {STRANGER}", "310 Got character ZDOID from Bob : 6:1",
+           "320 Got character ZDOID from Carol : 7:1")
+    text = leaderboard_reply(SimpleNamespace(server_name="Midgard"), store)["embed"].description
+    assert f"Bob (Steam …{ALICE[-4:]})" in text and f"Bob (Steam …{STRANGER[-4:]})" in text
+    assert "**Carol**" in text  # unique names stay plain

@@ -127,6 +127,7 @@ class OAuth:
             member = await self._member(guild_id, discord_id)
             steamid, steam_name = self._verified_steam(identity)
             self._check_not_linked_elsewhere(steamid, discord_id)
+            self._check_not_blocked(steamid, discord_id)
             self.whitelist.link(discord_id, str(member), guild_id, steamid, steam_name)
         except Refusal as refusal:
             return refusal.response
@@ -210,6 +211,12 @@ class OAuth:
                               "Your Discord has no verified Steam connection. Add it in Discord under "
                               "<b>User Settings → Connections → Steam</b>. " + TRY_AGAIN, 400)
         return steam[0]["id"], steam[0].get("name", "")
+
+    def _check_not_blocked(self, steamid: str, discord_id: int) -> None:
+        if self.whitelist.blocked(steamid, discord_id):
+            log.warning("refused whitelist link for %s -> steam %s: banned", discord_id, steamid)
+            raise self.refuse("🚫", "Blocked", "This Discord or Steam account is banned from the whitelist. If you "
+                              "think that's a mistake, ask an admin.", 403)
 
     def _check_not_linked_elsewhere(self, steamid: str, discord_id: int) -> None:
         entry = self.whitelist.by_steam(steamid)
