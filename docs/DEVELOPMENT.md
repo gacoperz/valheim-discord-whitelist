@@ -28,7 +28,8 @@ One test, with the same container:
 docker run --rm -v "$PWD":/src:ro -w /src -e PYTHONDONTWRITEBYTECODE=1 python:3.13-slim sh -c \
   'pip install -q --root-user-action=ignore -r requirements.txt pytest >/dev/null && python -m pytest -q -p no:cacheprovider tests/test_web.py'
 ```
-Run `./check.sh` before every push, and shellcheck after shell changes:
+CI (GitHub Actions, `.github/workflows/ci.yml`) runs ruff, pytest, shellcheck and a check that the compose files
+resolve, on every push and pull request. To run shellcheck locally:
 `docker run --rm -v "$PWD":/mnt:ro -w /mnt koalaman/shellcheck:stable -x install.sh check.sh host/bin/valheim-monthly-update`
 
 Type checking works too; `bot/` has no `__init__.py`, so tell mypy the layout:
@@ -78,7 +79,7 @@ machine. It reads the game's log and world save like production, but **never wri
 
 ## Branches and releases
 - **`dev`**: day-to-day work, deployed to the development instance.
-- **`main`**: released code only. Changes arrive by pull request from `dev` (or a feature branch), after `./check.sh` passes.
+- **`main`**: released code only. Changes arrive by pull request from `dev` (or a feature branch), and CI must pass.
 - **Releases** are tags on `main`: `vMAJOR.MINOR.PATCH`, with notes on anything an admin has to do.
   Production checks out a tag (see [OPERATIONS.md](OPERATIONS.md#updating)).
 
