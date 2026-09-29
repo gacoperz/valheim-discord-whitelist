@@ -47,7 +47,7 @@ Tuning constants that rarely need changing (poll interval, alert thresholds, lin
 | `VALHEIM_MEM_LIMIT` | Memory cap for the game container (default `3200m`). |
 
 The game image has many more options (backups, update schedule, mods): see its
-[documentation](https://github.com/lloesche/valheim-server-docker#environment-variables).
+[documentation](https://github.com/community-valheim-tools/valheim-server-docker#environment-variables).
 
 ### World seed
 Valheim's dedicated server has no seed option: a new world gets a random seed. To play on a chosen seed, create
