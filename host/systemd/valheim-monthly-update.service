@@ -1,0 +1,11 @@
+[Unit]
+Description=Monthly image refresh for the Valheim server, bot and Caddy
+After=docker.service network-online.target
+Wants=network-online.target
+Requires=docker.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/valheim-monthly-update
+# may wait up to 6 h for the server to be empty
+TimeoutStartSec=7h

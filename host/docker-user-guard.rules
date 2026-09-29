@@ -1,0 +1,11 @@
+# BEGIN DOCKER-USER guard: stop Docker-published ports from bypassing ufw.
+# Only Valheim (2456-2457/udp) and the bot's HTTPS return page (443/tcp, Caddy) may reach containers.
+# install.sh appends this to /etc/ufw/after.rules with @EXT_IF@ replaced by the external interface.
+*filter
+:DOCKER-USER - [0:0]
+-A DOCKER-USER -m conntrack --ctstate RELATED,ESTABLISHED -j RETURN
+-A DOCKER-USER -i @EXT_IF@ -p udp -m conntrack --ctorigdstport 2456:2457 --ctdir ORIGINAL -j RETURN
+-A DOCKER-USER -i @EXT_IF@ -p tcp -m conntrack --ctorigdstport 443 --ctdir ORIGINAL -j RETURN
+-A DOCKER-USER -i @EXT_IF@ -j DROP
+COMMIT
+# END DOCKER-USER guard

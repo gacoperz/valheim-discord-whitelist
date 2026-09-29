@@ -1,0 +1,14 @@
+# Development instance next to production (see docs/DEVELOPMENT.md). Enable it in the dev checkout's .env:
+#   COMPOSE_FILE=compose.yaml:compose.dev.yaml
+#   COMPOSE_PROFILES=            (empty: no Caddy of its own; production's Caddy routes /dev/* here)
+# It joins production's web network, and must point WHITELIST_HOST_FILE at a dummy file, never the real one.
+services:
+  bot:
+    image: valheim-discord-whitelist:dev
+    environment:
+      WHITELIST_HOST_FILE_CHECK: ${WHITELIST_HOST_FILE:?a dev instance must set WHITELIST_HOST_FILE to a dummy file}
+
+networks:
+  web:
+    name: ${WEB_NETWORK:-valheim-bot-web}
+    external: true

@@ -1,0 +1,25 @@
+# HTTPS with a domain name (the usual case): Caddy gets a normal Let's Encrypt certificate.
+# SITE_ADDRESS (a domain pointing at this server) and BOT_CONTAINER come from .env via compose.
+{
+	# Only 443 is open; no HTTP->HTTPS redirect listener.
+	auto_https disable_redirects
+	cert_issuer acme {
+		# Port 80 stays closed: validate on 443 (TLS-ALPN) instead.
+		disable_http_challenge
+	}
+	# UDP 443 is closed, so don't advertise HTTP/3
+	servers {
+		protocols h1 h2
+	}
+}
+
+https://{$SITE_ADDRESS} {
+	import /etc/caddy/extra/*.caddy
+	handle /discord/* {
+		reverse_proxy {$BOT_CONTAINER}:8080
+	}
+	handle {
+		respond 404
+	}
+	import /etc/caddy/common.caddy
+}

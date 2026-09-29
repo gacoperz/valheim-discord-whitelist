@@ -1,0 +1,41 @@
+# Valheim dedicated server (lloesche/valheim-server) prepared for the bot. install.sh copies this folder to
+# VALHEIM_DIR (default /opt/valheim) and writes .env there; see valheim/.env.example.
+# What the bot relies on is marked "bot:". Keep those lines if you adapt an existing server.
+services:
+  valheim:
+    image: lloesche/valheim-server:latest
+    container_name: valheim
+    restart: unless-stopped
+    stop_grace_period: 2m          # give the server time to save the world
+    ports:
+      - "2456-2457:2456-2457/udp"
+    env_file: .env                 # SERVER_PASS (may be empty: the whitelist controls access)
+    environment:
+      SERVER_NAME: ${SERVER_NAME:?set SERVER_NAME in .env}
+      WORLD_NAME: ${WORLD_NAME:?set WORLD_NAME in .env}
+      SERVER_PUBLIC: ${SERVER_PUBLIC:-false}   # false = not in the server browser; join by IP
+      SERVER_ARGS: ${SERVER_ARGS:-}            # e.g. "-preset normal -modifier raids none"
+      PUID: ${VALHEIM_UID:?set VALHEIM_UID in .env}   # unprivileged host user that owns the files
+      PGID: ${VALHEIM_GID:?set VALHEIM_GID in .env}
+      TZ: ${TZ:-UTC}
+      BACKUPS: "true"
+      BACKUPS_CRON: "5 * * * *"
+      BACKUPS_MAX_AGE: "3"
+      UPDATE_IF_IDLE: "true"
+      # bot: it writes config/permittedlist.txt through the group; the image resets /config/*.txt permissions
+      # on every start, so keep them group-writable
+      CONFIG_FILE_PERMISSIONS: "664"
+      # bot: copy player/server events, and the game's refusal messages, to config/bot/events.log
+      VALHEIM_LOG_FILTER_REGEXP_DiscordBot: "Got handshake from client|Got character ZDOID from|Closing socket|Game server connected|Valheim version:|is blacklisted or not in whitelist|has incompatible version, mine:|Kicking player not in permitted list"
+      ON_VALHEIM_LOG_FILTER_REGEXP_DiscordBot: '{ read -r l; echo "$$(date +%s) $$l"; } >> /config/bot/events.log'
+    volumes:
+      - ./config:/config
+      - ./data:/opt/valheim
+    security_opt:
+      - no-new-privileges:true
+    mem_limit: ${VALHEIM_MEM_LIMIT:-3200m}
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"

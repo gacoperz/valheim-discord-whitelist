@@ -1,0 +1,5 @@
+# Route a development instance's login return page (docs/DEVELOPMENT.md). Copy to dev.caddy and restart Caddy.
+# The dev bot's PUBLIC_URL is then https://<SITE_ADDRESS>/dev, so Discord returns to /dev/discord/callback.
+handle_path /dev/* {
+	reverse_proxy valheim-bot-dev:8080
+}

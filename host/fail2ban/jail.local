@@ -1,0 +1,15 @@
+# fail2ban for SSH: 5 failures in 10 minutes -> banned for 1 hour, doubling for repeat offenders (max 1 week).
+# install.sh writes this to /etc/fail2ban/jail.local, with @IGNOREIP@ replaced by addresses never to ban
+# (it offers the IP you are connected from, so a few typos can't lock you out).
+[DEFAULT]
+ignoreip = 127.0.0.1/8 ::1 @IGNOREIP@
+maxretry = 5
+findtime = 10m
+bantime  = 1h
+bantime.increment = true
+bantime.factor    = 2
+bantime.maxtime   = 1w
+
+[sshd]
+enabled = true
+mode    = aggressive

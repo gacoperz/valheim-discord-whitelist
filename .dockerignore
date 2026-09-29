@@ -1,0 +1,11 @@
+# Only requirements.txt and bot/ are copied into the image; keep secrets and data out of the build context.
+.env
+secrets.env
+data/
+caddy/
+.git/
+tests/
+docs/
+host/
+valheim/
+**/__pycache__/

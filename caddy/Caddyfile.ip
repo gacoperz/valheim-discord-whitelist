@@ -1,0 +1,28 @@
+# HTTPS for a bare IP address (no domain): Let's Encrypt issues IP certificates only with its 6-day
+# "shortlived" profile, which Caddy renews automatically.
+# SITE_ADDRESS (the server's public IP) and BOT_CONTAINER come from .env via compose.
+{
+	# Browsers send no SNI when connecting to a bare IP: serve the IP certificate by default.
+	default_sni {$SITE_ADDRESS}
+	# Only 443 is open; no HTTP->HTTPS redirect listener.
+	auto_https disable_redirects
+	cert_issuer acme {
+		profile shortlived
+		disable_http_challenge
+	}
+	# UDP 443 is closed, so don't advertise HTTP/3
+	servers {
+		protocols h1 h2
+	}
+}
+
+https://{$SITE_ADDRESS} {
+	import /etc/caddy/extra/*.caddy
+	handle /discord/* {
+		reverse_proxy {$BOT_CONTAINER}:8080
+	}
+	handle {
+		respond 404
+	}
+	import /etc/caddy/common.caddy
+}

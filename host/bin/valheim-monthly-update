@@ -1,0 +1,58 @@
+#!/bin/bash
+# Monthly image refresh (run by valheim-monthly-update.timer; logs: journalctl -u valheim-monthly-update).
+#  1. pulls lloesche/valheim-server and caddy, rebuilds the bot from a fresh python base without cache
+#  2. recreates the game server ONLY if its image changed AND nobody is online (retries every 30 min, up to 6 h)
+#  3. recreates the bot and Caddy (a few seconds of downtime), prunes old images
+# Game updates themselves are handled by the game container (UPDATE_IF_IDLE); this refreshes the images.
+# Paths come from /etc/default/valheim-discord-whitelist.
+set -euo pipefail
+
+VALHEIM_DIR=/opt/valheim
+BOT_DIR=/opt/valheim-bot
+BOT_CONTAINER=valheim-bot
+# shellcheck source=/dev/null
+[[ -r /etc/default/valheim-discord-whitelist ]] && . /etc/default/valheim-discord-whitelist
+IDLE_TRIES=12      # x 30 min = 6 h
+IDLE_WAIT=1800
+
+log() { echo "[$(date -u +%FT%TZ)] $*"; }
+
+# Players online according to the bot's session log (unlisted servers don't answer A2S).
+# Prints nothing if the bot can't tell - treated as "not idle".
+players_online() {
+    docker exec "$BOT_CONTAINER" python -c \
+        "import sqlite3; print(sqlite3.connect('file:/data/bot.db?mode=ro', uri=True).execute('SELECT COUNT(*) FROM sessions WHERE end IS NULL').fetchone()[0])" \
+        2>/dev/null || true
+}
+
+log "pulling images"
+docker compose --project-directory "$VALHEIM_DIR" pull --quiet
+docker compose --project-directory "$BOT_DIR" pull --quiet caddy
+log "rebuilding bot (fresh base image and pip packages)"
+docker compose --project-directory "$BOT_DIR" build --pull --no-cache --quiet bot
+
+running=$(docker inspect valheim --format '{{.Image}}')
+latest=$(docker image inspect lloesche/valheim-server:latest --format '{{.Id}}')
+if [[ "$running" == "$latest" ]]; then
+    log "valheim image unchanged - game server left alone"
+else
+    recreated=
+    for ((i = 1; i <= IDLE_TRIES; i++)); do
+        n=$(players_online)
+        if [[ "$n" == "0" ]]; then
+            log "nobody online - recreating valheim with the new image"
+            docker compose --project-directory "$VALHEIM_DIR" up -d
+            recreated=1
+            break
+        fi
+        log "players online: ${n:-unknown} - retry $i/$IDLE_TRIES in $((IDLE_WAIT / 60)) min"
+        sleep "$IDLE_WAIT"
+    done
+    [[ -n "$recreated" ]] || log "WARNING: server never idle - valheim NOT updated this month (new image is pulled; next run retries)"
+fi
+
+log "recreating bot and caddy"
+docker compose --project-directory "$BOT_DIR" up -d
+docker image prune -f >/dev/null
+docker builder prune -f >/dev/null
+log "done: $(docker ps --format '{{.Names}}={{.Status}}' | tr '\n' ' ')"

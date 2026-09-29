@@ -1,0 +1,15 @@
+# instance config: settings, secrets and local content (see the *.example files)
+.env
+secrets.env
+motd/motd.md
+caddy/extra/*.caddy
+# runtime data (database, certificates)
+data/
+caddy/data/
+caddy/config/
+# python
+__pycache__/
+*.pyc
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/

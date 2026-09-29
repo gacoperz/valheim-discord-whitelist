@@ -1,0 +1,18 @@
+[project]
+name = "valheim-discord-whitelist"
+version = "1.0.0"
+description = "Discord bot for a Valheim dedicated server: live status and a Discord-verified whitelist"
+requires-python = ">=3.13"
+license = "GPL-3.0-or-later"
+authors = [{ name = "gacoperz" }]
+
+[tool.ruff]
+line-length = 120
+target-version = "py313"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP", "SIM"]
+ignore = ["SIM108"]  # nested ternaries read worse than a short if/else
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

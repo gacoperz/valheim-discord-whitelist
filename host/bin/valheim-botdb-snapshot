@@ -1,0 +1,65 @@
+#!/usr/bin/env python3
+"""Daily snapshot of the bot database (run by valheim-botdb-snapshot.timer).
+
+bot.db is the source of truth for the whitelist (permittedlist.txt is rebuilt from it), plus stats and history.
+Uses SQLite's online backup, which is safe while the bot is writing. Each snapshot is integrity-checked; the
+newest KEEP_DAYS days are kept. Paths come from /etc/default/valheim-discord-whitelist.
+Logs: journalctl -u valheim-botdb-snapshot
+Restore: stop the bot, copy a snapshot over BOT_DIR/data/bot.db (owner 10001, mode 600), start the bot.
+"""
+import datetime
+import os
+import sqlite3
+import sys
+import time
+
+
+def settings() -> dict[str, str]:
+    values = {"BOT_DIR": "/opt/valheim-bot", "BACKUP_DIR": "/root/backups/bot-db", "KEEP_DAYS": "14"}
+    try:
+        with open("/etc/default/valheim-discord-whitelist", encoding="utf-8") as f:
+            for line in f:
+                key, sep, value = line.strip().partition("=")
+                if sep and not key.startswith("#"):
+                    values[key] = value
+    except FileNotFoundError:
+        pass
+    return values
+
+
+def main() -> int:
+    cfg = settings()
+    source = os.path.join(cfg["BOT_DIR"], "data", "bot.db")
+    dest_dir, keep_days = cfg["BACKUP_DIR"], int(cfg["KEEP_DAYS"])
+    os.makedirs(dest_dir, mode=0o700, exist_ok=True)
+    stamp = datetime.datetime.now(datetime.UTC).strftime("%Y%m%d-%H%M%S")
+    dest = os.path.join(dest_dir, f"bot-{stamp}.db")
+    tmp = dest + ".partial"
+
+    src = sqlite3.connect(f"file:{source}?mode=ro", uri=True)
+    out = sqlite3.connect(tmp)
+    src.backup(out)
+    src.close()
+    check = out.execute("PRAGMA integrity_check").fetchone()[0]
+    whitelisted = out.execute("SELECT COUNT(*) FROM whitelist").fetchone()[0]
+    sessions = out.execute("SELECT COUNT(*) FROM sessions").fetchone()[0]
+    out.close()
+    if check != "ok":
+        os.remove(tmp)
+        print(f"ERROR: snapshot failed integrity check: {check}", file=sys.stderr)
+        return 1
+    os.chmod(tmp, 0o600)  # Discord and Steam IDs
+    os.rename(tmp, dest)
+    print(f"snapshot {dest}: {os.path.getsize(dest)} bytes, {whitelisted} whitelisted, {sessions} sessions")
+
+    cutoff = time.time() - keep_days * 86400
+    for name in sorted(os.listdir(dest_dir)):
+        path = os.path.join(dest_dir, name)
+        if name.startswith("bot-") and name.endswith(".db") and path != dest and os.path.getmtime(path) < cutoff:
+            os.remove(path)
+            print(f"removed old snapshot {name}")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
