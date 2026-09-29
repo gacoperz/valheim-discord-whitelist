@@ -17,6 +17,7 @@ login) and shares this data with no one else.
 | Failed joins: SteamID64, character name, time, reason (e.g. game versions) | The game server's log | Explaining to a player why they couldn't join |
 | Whitelist changes: time, action, SteamID64, the member's name, who made the change | Every change | The admin history (`/whitelist-admin history`) |
 | A notes field for manually added Steam IDs | Admins | Knowing who a manual entry belongs to |
+| Bans: SteamID64 and/or Discord user ID, name, reason, time, who banned | `/whitelist-admin ban` | Keeping banned people from joining again |
 
 **Not collected:** email addresses, passwords, message contents (the bot doesn't have the message-content intent),
 or the Discord login itself. The OAuth access token is used once to read the Steam connection and is **revoked
@@ -29,7 +30,7 @@ uses that only to notice people who leave, and doesn't store it.
 ## Where it's kept, and for how long
 | Place | Contains | Kept |
 |---|---|---|
-| `data/bot.db` (SQLite) | Everything in the table above | Whitelist entries until the member leaves the whitelist or the Discord, or an admin removes them. **Stats, failed joins and the change history have no automatic deletion.** |
+| `data/bot.db` (SQLite) | Everything in the table above | Whitelist entries until the member leaves the whitelist or the Discord, or an admin removes them; bans until an admin lifts them. **Stats, failed joins and the change history have no automatic deletion.** |
 | The game's `config/permittedlist.txt` | SteamID64s on the whitelist | Rewritten on every change |
 | The game's `config/bot/events.log` | Raw game log lines: SteamID64s, character names, times | Not trimmed automatically |
 | Container logs (bot, Caddy, game) | Whitelist changes with names and SteamID64s; Caddy's access log with visitors' IP addresses (the OAuth `code` and `state` are redacted) | Rotated by size (a few MB each) |
@@ -48,7 +49,7 @@ import os, sqlite3
 db, sid = sqlite3.connect("data/bot.db"), os.environ["STEAMID"]
 with db:
     db.execute("DELETE FROM deaths WHERE name IN (SELECT name FROM sessions WHERE steamid = ?)", (sid,))
-    for table in ("sessions", "join_attempts", "whitelist", "whitelist_audit"):
+    for table in ("sessions", "join_attempts", "whitelist", "whitelist_audit", "blocklist"):
         db.execute(f"DELETE FROM {table} WHERE steamid = ?", (sid,))
 EOF
 docker compose start bot

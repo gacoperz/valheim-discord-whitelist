@@ -78,9 +78,11 @@ hand them to anyone else.
 | Command | What it does |
 |---|---|
 | `/setup-dashboard` | Posts the dashboard in this channel (pin it). Running it again moves it; there is one dashboard. |
-| `/whitelist-admin list` | Everyone on the whitelist, with Discord user or note, date added, and when they last played. |
+| `/whitelist-admin list` | Everyone on the whitelist, with Discord user or note, date added, and when they last played; then everyone who is banned. |
 | `/whitelist-admin add steamid:<SteamID64> note:<who>` | Whitelist someone without Discord. Manual entries are never removed automatically. |
-| `/whitelist-admin remove member:@someone` / `steamid:<id>` | Remove an entry. |
+| `/whitelist-admin remove member:@someone` / `steamid:<id>` | Remove an entry. They can join again themselves. |
+| `/whitelist-admin ban member:@someone` / `steamid:<id>` `reason:` | Remove them **and block them from joining again**. Banning a member also blocks their Discord account, so a second Steam account doesn't get them back in. |
+| `/whitelist-admin unban steamid:<id>` (or `member:`) | Lift a ban. They aren't re-added; they can click *Join whitelist* again. |
 | `/whitelist-admin history` | The last 20 changes: when, what, which Steam ID, and who did it. |
 | `/whitelist-admin attempts` | The last 20 failed joins: not whitelisted, wrong game version, kicked, or dropped. |
 

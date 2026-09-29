@@ -7,6 +7,7 @@ from discord import app_commands
 
 from .config import OAUTH_STATE_TTL
 from .embeds import (
+    BLOCKED,
     CANT_POST,
     NOT_WHITELISTED,
     WHITELIST_WRITE_FAILED,
@@ -15,7 +16,7 @@ from .embeds import (
     my_stats_reply,
     whitelist_status_message,
 )
-from .whitelist import AuditAction, WhitelistWriteError
+from .whitelist import AuditAction, WhitelistBlocked, WhitelistWriteError
 
 if TYPE_CHECKING:  # only for type checkers: main imports this module, so a real import would be circular
     from .main import Bot
@@ -42,6 +43,8 @@ async def report_error(interaction: BotInteraction, error: Exception) -> None:
     error = getattr(error, "original", error)  # app command errors wrap the real exception
     if isinstance(error, app_commands.MissingPermissions):
         message = "⛔ You need the Manage Server permission to use this command."
+    elif isinstance(error, WhitelistBlocked):
+        message = BLOCKED
     elif isinstance(error, WhitelistWriteError):
         message = WHITELIST_WRITE_FAILED
     elif isinstance(error, discord.Forbidden):
@@ -60,6 +63,9 @@ async def send_join_link(interaction: BotInteraction) -> None:
     bot = interaction.client
     if not bot.oauth:
         await interaction.response.send_message("Whitelist linking isn't configured yet.", ephemeral=True)
+        return
+    if bot.whitelist.blocked(discord_id=interaction.user.id):
+        await interaction.response.send_message(BLOCKED, ephemeral=True)
         return
     current = bot.whitelist.by_discord(interaction.user.id)
     view = discord.ui.View()

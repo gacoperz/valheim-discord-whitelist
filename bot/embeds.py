@@ -8,7 +8,7 @@ from . import motd
 from .config import POLL_SECONDS, STEAMID64_LEN, STEAMID64_PREFIX, Config
 from .server import ServerState
 from .store import JoinAttempt, JoinProblem, LastPlayed, PlayerStats, StateKey, Store
-from .whitelist import Whitelist, WhitelistEntry
+from .whitelist import Block, Whitelist, WhitelistEntry
 from .world import current_day
 
 # Discord's limits are 4096 characters for an embed description and 2000 for a message; 4000 leaves a margin.
@@ -23,6 +23,7 @@ JOIN_HINT = "Click **Join whitelist** on the dashboard."
 NO_STATS = "No stats recorded yet."
 CANT_POST = "❌ I can't post here. I need View Channel, Send Messages and Embed Links."
 WHITELIST_WRITE_FAILED = "⚠️ The whitelist file couldn't be updated. The admin can check the bot log."
+BLOCKED = "🚫 You're blocked from the whitelist. If you think that's a mistake, ask an admin."
 INVALID_STEAMID = f"That's not a SteamID64 ({STEAMID64_LEN} digits, starts with {STEAMID64_PREFIX})."
 DASHBOARD_POSTED = f"✅ Dashboard posted; it updates every {POLL_SECONDS} s. Pin it if you like."
 
@@ -138,7 +139,7 @@ def my_stats_reply(store: Store, whitelist: Whitelist, user_id: int) -> dict:
 def whitelist_status_message(cfg: Config, whitelist: Whitelist, store: Store, user_id: int) -> str:
     entry = whitelist.by_discord(user_id)
     if not entry:
-        return f"❌ {NOT_WHITELISTED} {JOIN_HINT}"
+        return BLOCKED if whitelist.blocked(discord_id=user_id) else f"❌ {NOT_WHITELISTED} {JOIN_HINT}"
     message = (f"✅ Whitelisted: Steam **{entry.steam_name or '?'}** (`{entry.steamid}`) "
                f"since <t:{entry.added_at}:D>.")
     if cfg.join_address:
@@ -205,6 +206,14 @@ def format_last_played(played: LastPlayed | None) -> str:
     if not played:
         return "never played"
     return "🟢 online now" if played.online else f"played <t:{played.ts}:R>"
+
+
+def format_block(block: Block) -> str:
+    """One blocked line of /whitelist-admin list."""
+    who = [f"`{block.steamid}`" if block.steamid else None, f"<@{block.discord_id}>" if block.discord_id else None]
+    reason = f" · {block.reason}" if block.reason else ""
+    return (f"🚫 {' · '.join(part for part in who if part)} ({block.name or '?'}){reason} · banned "
+            f"<t:{block.blocked_at}:d> by {block.actor}")
 
 
 def format_whitelist_entry(entry: WhitelistEntry, protected: bool, played: LastPlayed | None) -> str:

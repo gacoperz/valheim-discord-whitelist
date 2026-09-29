@@ -9,6 +9,7 @@ from .embeds import (
     CANT_POST,
     DASHBOARD_POSTED,
     INVALID_STEAMID,
+    format_block,
     format_join_attempt,
     format_last_played,
     format_whitelist_entry,
@@ -19,7 +20,7 @@ from .embeds import (
 )
 from .store import StateKey
 from .views import BotInteraction, Dashboard, dashboard_message
-from .whitelist import AuditAction
+from .whitelist import AuditAction, WhitelistBlocked
 
 HISTORY_LIMIT = 20
 PROTECTED_STAYS = " 🔒 It is a protected owner ID (PROTECTED_STEAMIDS in compose), so it can still join."
@@ -98,6 +99,7 @@ async def whitelist_list(interaction: BotInteraction):
              for steamid in whitelist.protected if steamid not in listed]
     lines += [format_whitelist_entry(entry, whitelist.is_protected(entry.steamid), played.get(entry.steamid))
               for entry in entries]
+    lines += [format_block(block) for block in whitelist.blocks()]  # banned: shown so they can be unbanned
     embed = list_embed(f"🛡️ Whitelist ({len(lines)})", lines, "*The whitelist is empty — nobody can join.*")
     await interaction.response.send_message(embed=embed, ephemeral=True)
 
@@ -109,7 +111,11 @@ async def whitelist_add(interaction: BotInteraction, steamid: str, note: str):
     if not is_steamid64(steamid):
         await interaction.response.send_message(INVALID_STEAMID, ephemeral=True)
         return
-    added = interaction.client.whitelist.add_manual(steamid, note, str(interaction.user))
+    try:
+        added = interaction.client.whitelist.add_manual(steamid, note, str(interaction.user))
+    except WhitelistBlocked:
+        await interaction.response.send_message(f"🚫 `{steamid}` is banned. Unban it first.", ephemeral=True)
+        return
     message = f"✅ Added `{steamid}` ({note})." if added else f"`{steamid}` is already whitelisted."
     await interaction.response.send_message(message, ephemeral=True)
 
@@ -133,6 +139,55 @@ async def whitelist_remove(interaction: BotInteraction, member: discord.Member |
             message += PROTECTED_STAYS
     else:
         message = "Give a member or a SteamID64."
+    await interaction.response.send_message(message, ephemeral=True)
+
+
+@whitelist_admin.command(name="ban", description="Remove someone and stop them from joining again")
+@app_commands.describe(member="Discord member to ban (also blocks their Discord account)", steamid="…or a SteamID64",
+                       reason="Why (shown in the admin list and history)")
+async def whitelist_ban(interaction: BotInteraction, member: discord.Member | None = None, steamid: str | None = None,
+                        reason: str | None = None):
+    whitelist = interaction.client.whitelist
+    if member:
+        entry = whitelist.by_discord(member.id)
+        target_steamid, discord_id, name, who = entry.steamid if entry else None, member.id, str(member), member.mention
+    elif steamid:
+        target_steamid = steamid.strip()
+        if not is_steamid64(target_steamid):
+            await interaction.response.send_message(INVALID_STEAMID, ephemeral=True)
+            return
+        entry = whitelist.by_steam(target_steamid)
+        discord_id = entry.discord_id if entry else None
+        name, who = (entry.discord_name or entry.note) if entry else None, f"`{target_steamid}`"
+    else:
+        await interaction.response.send_message("Give a member or a SteamID64.", ephemeral=True)
+        return
+    if target_steamid and whitelist.is_protected(target_steamid):
+        await interaction.response.send_message(
+            f"🔒 {who} is a protected owner ID (PROTECTED_STEAMIDS), which is always whitelisted and can't be banned.",
+            ephemeral=True)
+        return
+    removed = whitelist.ban(steamid=target_steamid, discord_id=discord_id, name=name, reason=reason,
+                            actor=str(interaction.user))
+    blocked = " and ".join(part for part in (f"Steam `{target_steamid}`" if target_steamid else None,
+                                             f"Discord <@{discord_id}>" if discord_id else None) if part)
+    await interaction.response.send_message(
+        f"🚫 Banned {who}: {'removed from the whitelist and ' if removed else ''}blocked ({blocked}) until "
+        "`/whitelist-admin unban`.", ephemeral=True)
+
+
+@whitelist_admin.command(name="unban", description="Lift a ban (they can then join again themselves)")
+@app_commands.describe(steamid="SteamID64 to unban", member="…or a Discord member (for a Discord-only ban)")
+async def whitelist_unban(interaction: BotInteraction, steamid: str | None = None,
+                          member: discord.Member | None = None):
+    if not steamid and not member:
+        await interaction.response.send_message("Give a SteamID64 or a member.", ephemeral=True)
+        return
+    block = interaction.client.whitelist.unban(steamid=steamid.strip() if steamid else None,
+                                               discord_id=member.id if member else None, actor=str(interaction.user))
+    target = f"`{steamid.strip()}`" if steamid else member.mention
+    message = (f"✅ Unbanned {target}. They aren't re-added: they can click **Join whitelist** again." if block
+               else f"{target} isn't banned.")
     await interaction.response.send_message(message, ephemeral=True)
 
 

@@ -3,6 +3,9 @@
 Valheim treats an EMPTY permitted list as "everyone may join". The server has no password, so the file must
 never be empty: with no entries we write a placeholder ID. Protected IDs (the owner) are always written,
 whatever happens to their database entries. Every change is logged and recorded in whitelist_audit.
+
+Banned Steam accounts and Discord users are kept in the blocklist: they can't be linked or added until an admin
+unbans them, so a removal sticks.
 """
 import logging
 import sqlite3
@@ -33,7 +36,14 @@ CREATE TABLE IF NOT EXISTS whitelist_audit (
     id INTEGER PRIMARY KEY, ts INTEGER NOT NULL, action TEXT NOT NULL,
     steamid TEXT NOT NULL, subject TEXT, actor TEXT
 );
+CREATE TABLE IF NOT EXISTS blocklist (
+    id INTEGER PRIMARY KEY,
+    steamid TEXT UNIQUE,            -- NULL when only a Discord account is blocked
+    discord_id INTEGER UNIQUE,      -- NULL when only a Steam account is blocked
+    name TEXT, reason TEXT, blocked_at INTEGER NOT NULL, actor TEXT
+);
 """
+NO_STEAMID = "-"  # audit rows for a ban or unban of a Discord account without a known Steam account
 
 
 class AuditAction(StrEnum):
@@ -46,10 +56,30 @@ class AuditAction(StrEnum):
     REMOVE_ADMIN = "remove (admin)"
     LEFT_DISCORD = "remove (left Discord)"
     NOT_IN_DISCORD = "remove (not in Discord)"  # found by the hourly member check
+    BAN = "ban (admin)"
+    UNBAN = "unban (admin)"
 
 
 class WhitelistWriteError(Exception):
     """The database changed, but permittedlist.txt could not be written."""
+
+
+@dataclass(frozen=True)
+class Block:
+    steamid: str | None
+    discord_id: int | None
+    name: str | None  # who it is (Discord name or note), for the admin list
+    reason: str | None
+    blocked_at: int
+    actor: str
+
+
+class WhitelistBlocked(Exception):
+    """The Steam account or Discord user is banned: unban it first."""
+
+    def __init__(self, block: Block):
+        super().__init__(f"blocked: steam {block.steamid}, discord {block.discord_id}")
+        self.block = block
 
 
 @dataclass(frozen=True)
@@ -77,6 +107,7 @@ class AuditRecord:
 
 
 ENTRY_COLUMNS = "steamid, discord_id, discord_name, steam_name, note, guild_id, added_at"
+BLOCK_COLUMNS = "steamid, discord_id, name, reason, blocked_at, actor"
 
 
 class Whitelist:
@@ -106,6 +137,16 @@ class Whitelist:
         row = self.db.execute(f"SELECT {ENTRY_COLUMNS} FROM whitelist WHERE {column}=?", (value,)).fetchone()
         return WhitelistEntry(**dict(row)) if row else None
 
+    def blocked(self, steamid: str | None = None, discord_id: int | None = None) -> Block | None:
+        """The block covering this Steam account or Discord user, if any."""
+        row = self.db.execute(f"SELECT {BLOCK_COLUMNS} FROM blocklist WHERE steamid = ? OR discord_id = ?",
+                              (steamid, discord_id)).fetchone()
+        return Block(**dict(row)) if row else None
+
+    def blocks(self) -> list[Block]:
+        rows = self.db.execute(f"SELECT {BLOCK_COLUMNS} FROM blocklist ORDER BY blocked_at")
+        return [Block(**dict(row)) for row in rows]
+
     def history(self, limit: int = 20) -> list[AuditRecord]:
         rows = self.db.execute(
             "SELECT ts, action, steamid, subject, actor FROM whitelist_audit ORDER BY id DESC LIMIT ?", (limit,)
@@ -114,7 +155,10 @@ class Whitelist:
 
     # ---- changes: each one commits together with its audit rows, then rewrites the file ----
     def link(self, discord_id: int, discord_name: str, guild_id: int, steamid: str, steam_name: str) -> None:
-        """Link a Discord user to a Steam ID, replacing their previous Steam ID (one per user)."""
+        """Link a Discord user to a Steam ID, replacing their previous Steam ID (one per user).
+        Raises WhitelistBlocked if either is banned."""
+        if block := self.blocked(steamid, discord_id):
+            raise WhitelistBlocked(block)
         previous = self.by_discord(discord_id)
         manual = self.by_steam(steamid)
         with self.db:
@@ -133,7 +177,9 @@ class Whitelist:
         self.write_file()
 
     def add_manual(self, steamid: str, note: str, actor: str) -> bool:
-        """Returns False if the SteamID is already on the whitelist."""
+        """Returns False if the SteamID is already on the whitelist. Raises WhitelistBlocked if it is banned."""
+        if block := self.blocked(steamid):
+            raise WhitelistBlocked(block)
         if self.by_steam(steamid):
             return False
         with self.db:
@@ -158,6 +204,39 @@ class Whitelist:
                 self._audit(action, entry.steamid, entry.discord_name or entry.note, actor)
             self.write_file()
         return entry
+
+    def ban(self, *, steamid: str | None, discord_id: int | None, name: str | None, reason: str | None,
+            actor: str) -> list[WhitelistEntry]:
+        """Remove the Steam account and/or Discord user from the whitelist and block them from coming back.
+        Returns the entries that were removed. Protected IDs can't be banned (they are always whitelisted)."""
+        if steamid is None and discord_id is None:
+            raise ValueError("ban needs a Steam ID or a Discord user")
+        if steamid and self.is_protected(steamid):
+            raise ValueError(f"{steamid} is a protected ID")
+        removed = [entry for entry in {self.by_steam(steamid) if steamid else None,
+                                       self.by_discord(discord_id) if discord_id else None} if entry]
+        with self.db:
+            for entry in removed:
+                self.db.execute("DELETE FROM whitelist WHERE steamid=?", (entry.steamid,))
+            # one row per person: replace any earlier block of the same Steam account or Discord user
+            self.db.execute("DELETE FROM blocklist WHERE steamid = ? OR discord_id = ?", (steamid, discord_id))
+            self.db.execute("INSERT INTO blocklist (steamid, discord_id, name, reason, blocked_at, actor) "
+                            "VALUES (?, ?, ?, ?, ?, ?)", (steamid, discord_id, name, reason, int(time.time()), actor))
+            self._audit(AuditAction.BAN, steamid or NO_STEAMID, f"{name} ({reason})" if reason else name, actor)
+        if removed:
+            self.write_file()
+        return removed
+
+    def unban(self, *, steamid: str | None = None, discord_id: int | None = None, actor: str) -> Block | None:
+        """Lift the block covering this Steam account or Discord user. They are not re-added: they can join
+        again the normal way. Returns the lifted block, or None if there was none."""
+        block = self.blocked(steamid, discord_id)
+        if block:
+            with self.db:
+                self.db.execute("DELETE FROM blocklist WHERE steamid IS ? AND discord_id IS ?",
+                                (block.steamid, block.discord_id))
+                self._audit(AuditAction.UNBAN, block.steamid or NO_STEAMID, block.name, actor)
+        return block
 
     def _audit(self, action: AuditAction, steamid: str, subject: str | None, actor: str) -> None:
         self.db.execute(
