@@ -88,13 +88,30 @@ def status_embed(cfg: Config, server: ServerState, store: Store, *, join_steps_f
     return embed
 
 
+def character_label(row: PlayerStats, name_is_shared: bool) -> str:
+    """The character's name, plus the end of its Steam ID when another player uses the same name."""
+    if not name_is_shared:
+        return row.name
+    return f"{row.name} (Steam …{row.steamid[-4:]})" if row.steamid else f"{row.name} (Steam ?)"
+
+
+def shared_names(rows: list[PlayerStats]) -> set[str]:
+    """Character names (case-insensitive) used from more than one Steam account."""
+    seen: dict[str, int] = {}
+    for row in rows:
+        seen[row.name.lower()] = seen.get(row.name.lower(), 0) + 1
+    return {name for name, count in seen.items() if count > 1}
+
+
 def leaderboard_reply(cfg: Config, store: Store) -> dict:
     rows = store.stats()
     if not rows:
         return {"content": NO_STATS}
+    shared = shared_names(rows)
     medals = ["🥇", "🥈", "🥉"]
     lines = [
-        f"{medals[rank] if rank < 3 else f'`{rank + 1}.`'} **{row.name}** — {fmt_duration(row.playtime)}"
+        f"{medals[rank] if rank < 3 else f'`{rank + 1}.`'} **{character_label(row, row.name.lower() in shared)}**"
+        f" — {fmt_duration(row.playtime)}"
         f" · {row.sessions} sessions · 💀 {row.deaths}" + (" · 🟢" if row.online else "")
         for rank, row in enumerate(rows[:15])
     ]
@@ -109,8 +126,8 @@ def list_embed(title: str, lines: list[str], empty: str) -> discord.Embed:
     return discord.Embed(title=title, description=text[:EMBED_DESCRIPTION_LIMIT], colour=discord.Colour.blurple())
 
 
-def player_embed(row: PlayerStats) -> discord.Embed:
-    embed = discord.Embed(title=f"📊 {row.name}", colour=discord.Colour.blurple())
+def player_embed(row: PlayerStats, name_is_shared: bool = False) -> discord.Embed:
+    embed = discord.Embed(title=f"📊 {character_label(row, name_is_shared)}", colour=discord.Colour.blurple())
     embed.add_field(name="Playtime", value=fmt_duration(row.playtime))
     embed.add_field(name="Sessions", value=str(row.sessions))
     embed.add_field(name="Deaths", value=str(row.deaths))
@@ -129,11 +146,12 @@ def my_stats_reply(store: Store, whitelist: Whitelist, user_id: int) -> dict:
     if not entry:
         return {"content": "Your Discord isn't linked to a Steam account yet, so I can't tell which character "
                            "is yours. " + JOIN_HINT + " Then this button works."}
-    names = store.names_for_steam(entry.steamid)
-    if not names:
+    # only this account's characters, even if someone else uses the same character name
+    rows = sorted(store.stats(steamid=entry.steamid), key=lambda row: row.last_seen or 0, reverse=True)
+    if not rows:
         return {"content": "No playtime recorded for your Steam account yet — go play! ⚔️"}
-    embeds = [player_embed(store.player(name)) for name in names[:10]]
-    return {"content": f"Your characters ({len(names)}):" if len(names) > 1 else None, "embeds": embeds}
+    embeds = [player_embed(row) for row in rows[:10]]
+    return {"content": f"Your characters ({len(rows)}):" if len(rows) > 1 else None, "embeds": embeds}
 
 
 def whitelist_status_message(cfg: Config, whitelist: Whitelist, store: Store, user_id: int) -> str:

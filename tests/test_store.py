@@ -192,13 +192,67 @@ def test_stats_include_death_only_characters_and_sort_by_playtime(store):
     assert rows[2].first_seen is None and rows[2].last_seen is None
 
 
-def test_player_is_case_insensitive_and_none_when_unknown(store):
+def test_stats_by_name_is_case_insensitive(store):
     add_session(store, "Alice", 0, 100)
-    assert store.player("ALICE").playtime == 100
-    assert store.player("Nobody") is None
+    assert [row.playtime for row in store.stats("ALICE")] == [100]
+    assert store.stats("Nobody") == []
 
 
 def test_state_values_round_trip(store):
     store.set(StateKey.DASHBOARD, {"channel": 1, "message": 2})
     assert store.get(StateKey.DASHBOARD) == {"channel": 1, "message": 2}
     assert store.get(StateKey.ORPHANS_NOTIFIED, []) == []
+
+
+def test_same_character_name_on_two_steam_accounts_counts_apart(store, events):
+    store.ingest(events(
+        "100 Got handshake from client 111",
+        "110 Got character ZDOID from Bob : 5:1",
+        "150 Got character ZDOID from Bob : 0:0",  # player 111's Bob dies
+        "200 Closing socket 111",
+        "300 Got handshake from client 222",
+        "310 Got character ZDOID from Bob : 6:1",
+        "400 Closing socket 222",
+    ))
+    rows = {row.steamid: row for row in store.stats("bob")}
+    assert (rows["111"].playtime, rows["111"].deaths) == (90, 1)
+    assert (rows["222"].playtime, rows["222"].deaths) == (90, 0)
+    assert [row.name for row in store.stats(steamid="222")] == ["Bob"]
+
+
+def test_death_is_linked_to_the_open_session(store, events):
+    store.ingest(events("100 Got handshake from client 111", "110 Got character ZDOID from Alice : 5:1",
+                        "150 Got character ZDOID from Alice : 0:0"))
+    assert store.db.execute("SELECT steamid FROM deaths").fetchone()[0] == "111"
+
+
+def test_old_database_gets_death_steamids_filled_in(tmp_path):
+    """A database from before v1.1.0: deaths without a steamid column."""
+    import sqlite3
+    path = str(tmp_path / "old.db")
+    old = sqlite3.connect(path)
+    old.executescript("""
+        CREATE TABLE sessions (id INTEGER PRIMARY KEY, name TEXT NOT NULL, steamid TEXT, start INTEGER NOT NULL,
+                               end INTEGER);
+        CREATE TABLE deaths (id INTEGER PRIMARY KEY, name TEXT NOT NULL, ts INTEGER NOT NULL);
+        INSERT INTO sessions (name, steamid, start, end) VALUES ('Bob', '111', 100, 200), ('Bob', '222', 300, NULL);
+        INSERT INTO deaths (name, ts) VALUES ('Bob', 150), ('Bob', 350), ('Ghost', 10);
+    """)
+    old.commit()
+    old.close()
+    store = Store(connect(path))
+    assert [tuple(r) for r in store.db.execute("SELECT name, ts, steamid FROM deaths ORDER BY ts")] == [
+        ("Ghost", 10, None), ("Bob", 150, "111"), ("Bob", 350, "222")]
+    Store(store.db)  # opening it again changes nothing
+    assert store.db.execute("SELECT COUNT(*) FROM deaths WHERE steamid IS NOT NULL").fetchone()[0] == 2
+
+
+def test_two_players_with_the_same_name_online_at_once(store, events):
+    store.ingest(events(
+        "100 Got handshake from client 111",
+        "110 Got character ZDOID from Bob : 5:1",
+        "120 Got handshake from client 222",
+        "130 Got character ZDOID from Bob : 6:1",  # another player, same name: a new session, not a respawn
+        "140 Got character ZDOID from Bob : 5:2",  # player 111 respawns: still one session
+    ))
+    assert sessions(store) == [("Bob", "111", 110, None), ("Bob", "222", 130, None)]

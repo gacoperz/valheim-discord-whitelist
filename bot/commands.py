@@ -46,8 +46,9 @@ async def stats(interaction: BotInteraction, player: str | None = None):
     if not player:
         await interaction.response.send_message(**leaderboard_reply(bot.cfg, bot.store))
         return
-    if stats := bot.store.player(player):
-        await interaction.response.send_message(embed=player_embed(stats))
+    if rows := bot.store.stats(player):  # several if players on different Steam accounts share the name
+        shared = len(rows) > 1
+        await interaction.response.send_message(embeds=[player_embed(row, shared) for row in rows[:10]])
     else:
         await interaction.response.send_message(f"No data for **{discord.utils.escape_markdown(player)}** yet.")
 
