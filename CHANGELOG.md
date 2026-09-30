@@ -1,5 +1,15 @@
 # Changelog
 
+## v1.1.2
+**Upgrading:** check out the tag and run `docker compose up -d --build`. The bot's behaviour is unchanged; this
+release is documentation, metadata and CI. No database changes and nothing to do by hand.
+
+- **Docs check in CI.** `check_docs.py` (also part of `./check.sh`) fails on doc lines over 120 characters, filler
+  words, links to missing files or headings, and setting names that appear nowhere outside the docs.
+- **Docs wording.** Long lines are wrapped, the game image's repo URL is stated once (README credits), and the
+  v1.1.1 changelog entry and a README bullet say what they do instead of using a vague label.
+- The copyright line and `pyproject.toml` name the author.
+
 ## v1.1.1
 **Upgrading:** check out the tag and run `docker compose up -d --build`. No database changes and nothing to do by
 hand. The image is rebuilt with pinned dependency versions.
