@@ -1,7 +1,7 @@
 # Installing
 
 This sets up three things on one machine: the Valheim dedicated server
-(the [valheim-server](https://github.com/community-valheim-tools/valheim-server-docker) image, `lloesche/valheim-server`), the bot, and
+(the `lloesche/valheim-server` image, see [Credits](../README.md#credits)), the bot, and
 [Caddy](https://caddyserver.com) for the HTTPS page Discord's login returns to.
 
 ## 1. Requirements

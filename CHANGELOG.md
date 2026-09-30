@@ -4,7 +4,7 @@
 **Upgrading:** check out the tag and run `docker compose up -d --build`. No database changes and nothing to do by
 hand. The image is rebuilt with pinned dependency versions.
 
-- **More robust background work.** The hourly Discord member check keeps running after an error, and one
+- **Background work survives errors.** The hourly Discord member check keeps running after an error, and one
   unreadable line in the events log is logged and skipped instead of stopping all stats and session tracking.
   The events log is read in pieces of at most 8 MiB per poll.
 - **Login page.** A ban that lands while someone is linking now shows the "Blocked" page instead of an error;

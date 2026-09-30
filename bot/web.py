@@ -237,7 +237,7 @@ class OAuth:
             try:
                 return await guild.fetch_member(discord_id)
             except discord.NotFound:
-                pass
+                pass  # not a member: fall through to the refusal below
         raise self.refuse("🚫", "Not a member",
                           f"You need to be in the {html.escape(self.cfg.server_name)} Discord.", 403)
 

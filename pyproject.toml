@@ -16,3 +16,4 @@ ignore = ["SIM108"]  # nested ternaries read worse than a short if/else
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+pythonpath = ["."]
