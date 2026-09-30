@@ -13,8 +13,9 @@ Steam IDs around.
   (wrong game version, not whitelisted yet, probably playing on another Steam account).
 - **Admin tools:** list, add by SteamID64, remove, change history, failed joins; private DM alerts when the
   server is down or something breaks.
-- **Locked down:** unprivileged read-only container, the game's whitelist file is the only thing it
-  writes, and admin commands are checked at run time.
+- **Minimal privileges:** the container runs as an unprivileged user on a read-only filesystem with all
+  capabilities dropped. The whitelist file is the only game file it writes, and admin commands are checked at
+  run time.
 
 It works with the `lloesche/valheim-server` Docker image (see [Credits](#credits)) and runs on one
 Debian or Ubuntu machine with Docker. `install.sh` sets up the game server, the bot and HTTPS, and can harden

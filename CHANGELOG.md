@@ -4,9 +4,9 @@
 **Upgrading:** check out the tag and run `docker compose up -d --build`. No database changes and nothing to do by
 hand. The image is rebuilt with pinned dependency versions.
 
-- **Background work survives errors.** The hourly Discord member check keeps running after an error, and one
-  unreadable line in the events log is logged and skipped instead of stopping all stats and session tracking.
-  The events log is read in pieces of at most 8 MiB per poll.
+- **Errors no longer stop background work.** The hourly Discord member check logs an error and tries again an
+  hour later. An events-log line that fails to process is logged and skipped, so later lines still count for stats
+  and sessions. Each poll reads at most 8 MiB of the log.
 - **Login page.** A ban that lands while someone is linking now shows the "Blocked" page instead of an error;
   calls to Discord time out after 10 s; requests are limited to 30 per minute per address.
 - **Admin commands.** `/whitelist-admin remove` and `unban` check the SteamID like `add` and `ban` do;
