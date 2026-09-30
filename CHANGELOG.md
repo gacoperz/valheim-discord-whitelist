@@ -1,5 +1,19 @@
 # Changelog
 
+## v1.1.1
+**Upgrading:** check out the tag and run `docker compose up -d --build`. No database changes and nothing to do by
+hand. The image is rebuilt with pinned dependency versions.
+
+- **More robust background work.** The hourly Discord member check keeps running after an error, and one
+  unreadable line in the events log is logged and skipped instead of stopping all stats and session tracking.
+  The events log is read in pieces of at most 8 MiB per poll.
+- **Login page.** A ban that lands while someone is linking now shows the "Blocked" page instead of an error;
+  calls to Discord time out after 10 s; requests are limited to 30 per minute per address.
+- **Admin commands.** `/whitelist-admin remove` and `unban` check the SteamID like `add` and `ban` do;
+  `/setup-dashboard` answers cleanly when it can't post in the channel.
+- The database waits up to 5 s for a lock (backups, read-only checks) instead of failing at once.
+- CI also lints the snapshot script.
+
 ## v1.1.0
 **Upgrading:** check out the tag and run `docker compose up -d --build`. The database is migrated automatically on
 start (new columns and a `blocklist` table). Commands are re-registered on start; press Ctrl+R in Discord if the

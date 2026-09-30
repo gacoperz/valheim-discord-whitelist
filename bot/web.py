@@ -13,10 +13,12 @@ from aiohttp import web
 
 from . import motd
 from .config import OAUTH_STATE_TTL, Config
-from .whitelist import Whitelist, WhitelistWriteError
+from .whitelist import Whitelist, WhitelistBlocked, WhitelistWriteError
 
 log = logging.getLogger("valheim-bot.web")
 API = "https://discord.com/api/v10"
+HTTP_TIMEOUT = aiohttp.ClientTimeout(total=10)  # for each call to Discord
+RATE_LIMIT, RATE_WINDOW = 30, 60  # callback requests per address per window (seconds)
 CALLBACK_PATH = "/discord/callback"
 TRY_AGAIN = "Click <b>Join whitelist</b> on the dashboard in Discord to try again."
 
@@ -64,6 +66,28 @@ class OAuthStates:
         return (row["discord_id"], row["guild_id"]) if row else None
 
 
+class RateLimiter:
+    """At most `limit` hits per `window` seconds for each key (the client address)."""
+
+    def __init__(self, limit: int = RATE_LIMIT, window: float = RATE_WINDOW):
+        self.limit, self.window = limit, window
+        self.hits: dict[str, list[float]] = {}
+
+    def allow(self, key: str, now: float | None = None) -> bool:
+        now = time.monotonic() if now is None else now
+        recent = [t for t in self.hits.get(key, ()) if t > now - self.window]
+        allowed = len(recent) < self.limit
+        if allowed:
+            recent.append(now)
+        if recent:
+            self.hits[key] = recent
+        else:
+            self.hits.pop(key, None)
+        if len(self.hits) > 1000:  # forget addresses that have gone quiet
+            self.hits = {k: v for k, v in self.hits.items() if v[-1] > now - self.window}
+        return allowed
+
+
 @dataclass
 class Identity:
     user_id: str
@@ -84,6 +108,7 @@ class OAuth:
         self.client_id = client_id
         self.redirect_uri = cfg.public_url.rstrip("/") + CALLBACK_PATH
         self.runner: web.AppRunner | None = None
+        self.limiter = RateLimiter()
 
     def page(self, icon: str, title: str, body: str, status: int = 200) -> web.Response:
         return web.Response(
@@ -114,7 +139,15 @@ class OAuth:
             await self.runner.cleanup()
 
     # ---- the return page ----
+    @staticmethod
+    def _client_address(request: web.Request) -> str:
+        """The caller's address. Caddy appends the real one to X-Forwarded-For, so the last entry is trusted."""
+        forwarded = request.headers.get("X-Forwarded-For", "")
+        return forwarded.split(",")[-1].strip() or request.remote or "?"
+
     async def callback(self, request: web.Request) -> web.Response:
+        if not self.limiter.allow(self._client_address(request)):
+            return self.page("⏳", "Too many requests", "Wait a minute and try again.", 429)
         try:
             if request.query.get("error"):
                 return self.page("✋", "Cancelled", "Nothing was changed. " + TRY_AGAIN)
@@ -131,6 +164,8 @@ class OAuth:
             self.whitelist.link(discord_id, str(member), guild_id, steamid, steam_name)
         except Refusal as refusal:
             return refusal.response
+        except WhitelistBlocked:  # banned after the check above, before the link was saved
+            return self.refuse_blocked(steamid, discord_id).response
         except WhitelistWriteError:
             return self.page("⚠️", "Server problem", "Your account was verified, but the whitelist file couldn't "
                              "be updated. Please tell the server admin.", 500)
@@ -163,7 +198,7 @@ class OAuth:
     async def _fetch_identity(self, code: str) -> Identity:
         """Swap the code for a token, read the user and their connections, then revoke the token."""
         auth = aiohttp.BasicAuth(str(self.client_id), self.cfg.client_secret)
-        async with aiohttp.ClientSession() as http:
+        async with aiohttp.ClientSession(timeout=HTTP_TIMEOUT) as http:
             async with http.post(f"{API}/oauth2/token", auth=auth, data={
                 "grant_type": "authorization_code", "code": code, "redirect_uri": self.redirect_uri,
             }) as resp:
@@ -176,8 +211,11 @@ class OAuth:
                 me = await self._get_json(http, "/users/@me", headers)
                 connections = await self._get_json(http, "/users/@me/connections", headers)
             finally:  # we never keep the user's token
-                await http.post(f"{API}/oauth2/token/revoke", auth=auth,
-                                data={"token": token, "token_type_hint": "access_token"})
+                try:
+                    await http.post(f"{API}/oauth2/token/revoke", auth=auth,
+                                    data={"token": token, "token_type_hint": "access_token"})
+                except (aiohttp.ClientError, TimeoutError) as exc:  # the token expires by itself
+                    log.warning("could not revoke the token: %s", exc)
         if me is None or not isinstance(connections, list):
             raise self._login_failed()
         return Identity(str(me.get("id")), connections)
@@ -212,11 +250,14 @@ class OAuth:
                               "<b>User Settings → Connections → Steam</b>. " + TRY_AGAIN, 400)
         return steam[0]["id"], steam[0].get("name", "")
 
+    def refuse_blocked(self, steamid: str, discord_id: int) -> Refusal:
+        log.warning("refused whitelist link for %s -> steam %s: banned", discord_id, steamid)
+        return self.refuse("🚫", "Blocked", "This Discord or Steam account is banned from the whitelist. If you "
+                           "think that's a mistake, ask an admin.", 403)
+
     def _check_not_blocked(self, steamid: str, discord_id: int) -> None:
         if self.whitelist.blocked(steamid, discord_id):
-            log.warning("refused whitelist link for %s -> steam %s: banned", discord_id, steamid)
-            raise self.refuse("🚫", "Blocked", "This Discord or Steam account is banned from the whitelist. If you "
-                              "think that's a mistake, ask an admin.", 403)
+            raise self.refuse_blocked(steamid, discord_id)
 
     def _check_not_linked_elsewhere(self, steamid: str, discord_id: int) -> None:
         entry = self.whitelist.by_steam(steamid)

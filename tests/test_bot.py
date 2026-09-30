@@ -87,6 +87,16 @@ def test_poll_survives_errors_and_only_a_good_poll_writes_the_heartbeat(tmp_path
     assert heartbeat.exists()
 
 
+def test_hourly_member_check_survives_errors():
+    from bot import main
+
+    class FakeBot:
+        async def member_check(self):
+            raise RuntimeError("cannot write permittedlist.txt")
+
+    asyncio.run(main.Bot.hourly_member_check.coro(FakeBot()))  # must not raise: the loop keeps running
+
+
 def remove_reply(tmp_path, protected_member: bool, **target) -> str:
     """Run /whitelist-admin remove with a fake interaction; return what the bot replied."""
     from types import SimpleNamespace

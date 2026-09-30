@@ -60,6 +60,9 @@ async def stats(interaction: BotInteraction, player: str | None = None):
 @app_commands.guild_only()
 async def setup_dashboard(interaction: BotInteraction):
     bot = interaction.client
+    if not isinstance(interaction.channel, discord.abc.Messageable):
+        await interaction.response.send_message(CANT_POST, ephemeral=True)
+        return
     embed = status_embed(bot.cfg, bot.server, bot.store, join_steps_field=True)
     try:
         message = await interaction.channel.send(embed=embed, view=Dashboard())
@@ -134,6 +137,9 @@ async def whitelist_remove(interaction: BotInteraction, member: discord.Member |
             message += PROTECTED_STAYS
     elif steamid:
         steamid = steamid.strip()
+        if not is_steamid64(steamid):
+            await interaction.response.send_message(INVALID_STEAMID, ephemeral=True)
+            return
         entry = whitelist.remove_steam(steamid, AuditAction.REMOVE_ADMIN, actor)
         message = f"Removed `{steamid}`." if entry else f"`{steamid}` has no whitelist entry."
         if whitelist.is_protected(steamid):
@@ -184,9 +190,13 @@ async def whitelist_unban(interaction: BotInteraction, steamid: str | None = Non
     if not steamid and not member:
         await interaction.response.send_message("Give a SteamID64 or a member.", ephemeral=True)
         return
-    block = interaction.client.whitelist.unban(steamid=steamid.strip() if steamid else None,
+    steamid = steamid.strip() if steamid else None
+    if steamid and not is_steamid64(steamid):
+        await interaction.response.send_message(INVALID_STEAMID, ephemeral=True)
+        return
+    block = interaction.client.whitelist.unban(steamid=steamid,
                                                discord_id=member.id if member else None, actor=str(interaction.user))
-    target = f"`{steamid.strip()}`" if steamid else member.mention
+    target = f"`{steamid}`" if steamid else member.mention
     message = (f"✅ Unbanned {target}. They aren't re-added: they can click **Join whitelist** again." if block
                else f"{target} isn't banned.")
     await interaction.response.send_message(message, ephemeral=True)
