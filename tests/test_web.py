@@ -8,7 +8,7 @@ from types import SimpleNamespace
 import pytest
 
 from bot.store import connect
-from bot.web import OAuth, OAuthStates
+from bot.web import OAuth, OAuthStates, RateLimiter
 from bot.whitelist import Whitelist
 
 ALLOWED, OTHER = 1, 2
@@ -46,7 +46,7 @@ def visit(setup, query, who=None):
     async def fetch_identity(code):
         return who or identity()
     setup.oauth._fetch_identity = fetch_identity
-    response = asyncio.run(setup.oauth.callback(SimpleNamespace(query=query)))
+    response = asyncio.run(setup.oauth.callback(SimpleNamespace(query=query, headers={}, remote="1.2.3.4")))
     return response.status, response.text
 
 
@@ -109,3 +109,20 @@ def test_steam_name_is_html_escaped(setup):
     evil = ({"type": "steam", "verified": True, "id": STEAM, "name": "<script>alert(1)</script>"},)
     page = visit(setup, link(setup), who=identity(steam=evil))[1]
     assert "<script>" not in page and "&lt;script&gt;" in page
+
+
+def test_ban_between_the_check_and_the_link_shows_the_blocked_page(setup, monkeypatch):
+    from bot.whitelist import Block, WhitelistBlocked
+
+    def banned(*args):
+        raise WhitelistBlocked(Block(STEAM, ALICE, "alice", None, 0, "admin"))
+    monkeypatch.setattr(setup.whitelist, "link", banned)
+    status, page = visit(setup, link(setup))
+    assert status == 403 and "Blocked" in page
+
+
+def test_too_many_requests_from_one_address_are_refused(setup):
+    setup.oauth.limiter = RateLimiter(limit=2, window=60)
+    request = SimpleNamespace(query={"error": "access_denied"}, headers={}, remote="9.9.9.9")
+    statuses = [asyncio.run(setup.oauth.callback(request)).status for _ in range(3)]
+    assert statuses == [200, 200, 429]

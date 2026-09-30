@@ -98,6 +98,13 @@ class Bot(discord.Client):
     async def hourly_member_check(self):
         """Catch people who left their Discord server while the bot was down (works without the members
         intent), and tell the admin about entries the bot can no longer manage."""
+        # An exception would stop this loop for good (discord.ext.tasks): log it and try again next hour.
+        try:
+            await self.member_check()
+        except Exception:
+            log.exception("hourly member check failed; retrying in an hour")
+
+    async def member_check(self):
         await self.notify_orphans()
         for entry in self.whitelist.entries():
             guild = self.get_guild(entry.guild_id) if entry.discord_id else None
@@ -109,6 +116,8 @@ class Bot(discord.Client):
                 self.whitelist.remove_discord(entry.discord_id, AuditAction.NOT_IN_DISCORD, "bot hourly check")
             except discord.HTTPException as exc:
                 log.warning("member check failed for %s: %s", entry.discord_name, exc)
+            except WhitelistWriteError:  # the entry is gone from the database; the poll retries the file
+                pass
 
     @hourly_member_check.before_loop
     async def before_member_check(self):
@@ -242,11 +251,15 @@ def main():
     cfg = Config.from_env()
     db = connect(cfg.db_path)  # one connection, reused if the bot has to start again without the members intent
     try:
-        Bot(cfg, db, members_intent=True).run(cfg.token, log_handler=None)
-    except discord.PrivilegedIntentsRequired:
-        log.warning("Server Members Intent is not enabled in the Developer Portal - running without it; "
-                    "people leaving the Discord are removed from the whitelist by the hourly check instead")
-        Bot(cfg, db, members_intent=False).run(cfg.token, log_handler=None)
+        for members_intent in (True, False):
+            try:
+                Bot(cfg, db, members_intent=members_intent).run(cfg.token, log_handler=None)
+                break
+            except discord.PrivilegedIntentsRequired:
+                if not members_intent:
+                    raise
+                log.warning("Server Members Intent is not enabled in the Developer Portal - running without it; "
+                            "people leaving the Discord are removed from the whitelist by the hourly check instead")
     finally:
         db.close()
 

@@ -256,3 +256,34 @@ def test_two_players_with_the_same_name_online_at_once(store, events):
         "140 Got character ZDOID from Bob : 5:2",  # player 111 respawns: still one session
     ))
     assert sessions(store) == [("Bob", "111", 110, None), ("Bob", "222", 130, None)]
+
+
+def test_a_line_that_fails_is_skipped_and_ingestion_goes_on(store, events, monkeypatch):
+    log = events(
+        "100 Got handshake from client 111",
+        "101 Got character ZDOID from Broken : 5:1",
+        "110 Got character ZDOID from Alice : 6:1",
+    )
+    real = store._handle
+
+    def handle(ts, line, pending):
+        if "Broken" in line:
+            raise RuntimeError("bad line")
+        real(ts, line, pending)
+    monkeypatch.setattr(store, "_handle", handle)
+    assert store.ingest(log) == 2
+    assert [row[0] for row in sessions(store)] == ["Alice"]
+    assert store.ingest(log) == 0  # the offset moved past the bad line
+
+
+def test_ingest_reads_a_big_backlog_in_pieces(store, events, monkeypatch):
+    from bot import store as store_module
+
+    monkeypatch.setattr(store_module, "MAX_READ_BYTES", 64)
+    lines = [f"{100 + i} Got handshake from client {i}" for i in range(10)]
+    log = events(*lines)
+    total = 0
+    while count := store.ingest(log):
+        total += count
+    assert total == 10
+    assert len(store.get(StateKey.PENDING_HANDSHAKES)) == 10

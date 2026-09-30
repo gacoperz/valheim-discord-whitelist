@@ -3,6 +3,7 @@
 The Valheim log-filter hook writes each matching server log line to events.log as "<unix ts> <raw line>".
 """
 import json
+import logging
 import os
 import re
 import sqlite3
@@ -10,6 +11,11 @@ import time
 from dataclasses import dataclass
 from enum import StrEnum
 from typing import Any
+
+log = logging.getLogger("valheim-bot.store")
+
+MAX_READ_BYTES = 8 * 1024 * 1024  # read at most this much of the events log per call; the rest waits for the next
+BUSY_TIMEOUT_MS = 5000  # wait this long for a lock held by another process (a backup, a `docker exec` read)
 
 RE_HANDSHAKE = re.compile(r"Got handshake from client (\d+)")
 RE_ZDOID = re.compile(r"Got character ZDOID from (.+?) : (-?\d+):(-?\d+)")
@@ -82,6 +88,7 @@ def connect(path: str) -> sqlite3.Connection:
     """The bot's single database connection; rows can be read by column name."""
     db = sqlite3.connect(path)
     db.row_factory = sqlite3.Row
+    db.execute(f"PRAGMA busy_timeout = {BUSY_TIMEOUT_MS}")
     return db
 
 
@@ -153,15 +160,23 @@ class Store:
             return 0
         with open(path, "rb") as f:
             f.seek(offset)
-            chunk = f.read()
+            chunk = f.read(MAX_READ_BYTES)
         end = chunk.rfind(b"\n") + 1  # leave a half-written last line for the next call
+        if end == 0 and len(chunk) == MAX_READ_BYTES:  # one endless line: skip it or ingestion would never advance
+            log.warning("events log: skipping %d bytes without a line break at offset %d", len(chunk), offset)
+            end = len(chunk)
         count = 0
         with self.db:  # the whole batch, its pending handshakes and the new offset commit together
             pending = self.get(StateKey.PENDING_HANDSHAKES, [])
             for raw in chunk[:end].decode("utf-8", "replace").splitlines():
                 ts, _, line = raw.partition(" ")
-                if ts.isdigit():
+                if not ts.isdigit():
+                    continue
+                try:
                     self._handle(int(ts), line, pending)
+                except Exception:  # one bad line must not block every line after it
+                    log.exception("events log: skipping a line that failed: %.200r", raw)
+                else:
                     count += 1
             self._put(StateKey.PENDING_HANDSHAKES, pending)
             self._put(StateKey.EVENTS_OFFSET, offset + end)

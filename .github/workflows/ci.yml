@@ -13,7 +13,7 @@ jobs:
         with:
           python-version: "3.13"
       - run: pip install -r requirements.txt pytest ruff
-      - run: ruff check .
+      - run: ruff check . host/bin/valheim-botdb-snapshot
       - run: python -m pytest -q
   shell:
     runs-on: ubuntu-latest
