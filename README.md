@@ -13,10 +13,11 @@ Steam IDs around.
   (wrong game version, not whitelisted yet, probably playing on another Steam account).
 - **Admin tools:** list, add by SteamID64, remove, change history, failed joins; private DM alerts when the
   server is down or something breaks.
-- **Hardened by default:** unprivileged read-only container, the game's whitelist file is the only thing it
-  writes, and admin commands are checked at run time.
+- **Minimal privileges:** the container runs as an unprivileged user on a read-only filesystem with all
+  capabilities dropped. The whitelist file is the only game file it writes, and admin commands are checked at
+  run time.
 
-It works with the [valheim-server](https://github.com/community-valheim-tools/valheim-server-docker) Docker image and runs on one
+It works with the `lloesche/valheim-server` Docker image (see [Credits](#credits)) and runs on one
 Debian or Ubuntu machine with Docker. `install.sh` sets up the game server, the bot and HTTPS, and can harden
 the host (firewall, fail2ban, backups).
 
@@ -100,14 +101,15 @@ hand them to anyone else.
 
 ## Credits
 This bot stands on these projects:
-- [valheim-server-docker](https://github.com/community-valheim-tools/valheim-server-docker) (originally by lloesche): the Valheim server image,
+- [valheim-server-docker](https://github.com/community-valheim-tools/valheim-server-docker) (originally by
+  lloesche): the Valheim server image,
   including the log hooks the bot reads its events from (Apache-2.0)
 - [discord.py](https://github.com/Rapptz/discord.py) (MIT) and [aiohttp](https://github.com/aio-libs/aiohttp)
   (Apache-2.0)
 - [Caddy](https://caddyserver.com) for HTTPS (Apache-2.0)
 
 ## License
-Copyright (C) 2026 gacoperz
+Copyright (C) 2026 Slawomir Busz
 
 This program is free software: you can redistribute it and/or modify it under the terms of the GNU General Public
 License as published by the Free Software Foundation, either version 3 of the License, or (at your option) any

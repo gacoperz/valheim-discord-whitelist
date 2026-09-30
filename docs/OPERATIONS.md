@@ -77,9 +77,9 @@ Game server (VALHEIM_DIR)                                   Bot (this folder)
 Internet ──443/tcp──► Caddy ───────────────────────────────────┘  /discord/callback (Discord login)
 ```
 - **Events:** the game compose's log filter copies join/leave/death, start and version lines, and the game's
-  refusal messages, to `events.log`. The bot reads only what's new since its last read (at most 8 MiB per poll, and a line it can't
-  process is logged and skipped). The file only grows, about a few KB a day; the bot never rotates it (it is
-  mounted read-only), and if you truncate or replace it the bot starts again from the top.
+  refusal messages, to `events.log`. The bot reads only what's new since its last read (at most 8 MiB per poll;
+  a line it can't process is logged and skipped). The file only grows, about a few KB a day; the bot never
+  rotates it (it is mounted read-only), and if you truncate or replace it the bot starts again from the top.
 - **Online/offline:** an unlisted server doesn't answer Steam (A2S) queries, so the bot sends a UDP probe to
   port 2457: no reply means listening (online); "port unreachable" means down.
 - **In-game day:** the world time in the latest save, plus the time players were online since.

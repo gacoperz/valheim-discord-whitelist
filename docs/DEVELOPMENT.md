@@ -21,16 +21,20 @@
 ## Checks
 Nothing needs installing on the host; everything runs in a throwaway container:
 ```bash
-./check.sh                  # ruff + pytest
+./check.sh                  # ruff + pytest + the docs check (python check_docs.py)
 ```
 One test, with the same container:
 ```bash
 docker run --rm -v "$PWD":/src:ro -w /src -e PYTHONDONTWRITEBYTECODE=1 python:3.13-slim sh -c \
-  'pip install -q --root-user-action=ignore -r requirements.txt pytest >/dev/null && python -m pytest -q -p no:cacheprovider tests/test_web.py'
+  'pip install -q --root-user-action=ignore -r requirements.txt pytest >/dev/null \
+   && python -m pytest -q -p no:cacheprovider tests/test_web.py'
 ```
 CI (GitHub Actions, `.github/workflows/ci.yml`) runs ruff, pytest, shellcheck and a check that the compose files
 resolve, on every push and pull request. To run shellcheck locally:
-`docker run --rm -v "$PWD":/mnt:ro -w /mnt koalaman/shellcheck:stable -x install.sh check.sh host/bin/valheim-monthly-update`
+```bash
+docker run --rm -v "$PWD":/mnt:ro -w /mnt koalaman/shellcheck:stable \
+  -x install.sh check.sh host/bin/valheim-monthly-update
+```
 
 Type checking works too; `bot/` has no `__init__.py`, so tell mypy the layout:
 `mypy --explicit-package-bases bot`.
