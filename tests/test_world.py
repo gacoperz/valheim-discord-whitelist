@@ -27,3 +27,9 @@ def test_no_save_or_unreadable_dir_means_no_day(tmp_path):
     assert current_day(str(tmp_path), lambda since, now: 0.0, 0.0) is None
     (tmp_path / "Broken.db2").mkdir()  # open() fails with an OSError
     assert current_day(str(tmp_path), lambda since, now: 0.0, 0.0) is None
+
+
+def test_a_save_shorter_than_its_header_means_no_day(tmp_path):
+    """The game may be writing the file right now; the status embed must still build."""
+    (tmp_path / "World.db2").write_bytes(b"\x24\x00\x00\x00\x00")
+    assert current_day(str(tmp_path), lambda since, now: 0.0, 0.0) is None

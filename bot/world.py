@@ -25,7 +25,7 @@ def current_day(world_dir: str, online_seconds_since: Callable[[float, float], f
         saved_at = os.path.getmtime(path)
         with open(path, "rb") as f:
             _version, net_time = struct.unpack("<id", f.read(12))
-    except OSError:
+    except (OSError, struct.error):  # struct.error: shorter than the header, e.g. while the game writes it
         return None
     net_time += online_seconds_since(saved_at, now)
     return WorldDay(int(net_time // DAY_LENGTH), int(saved_at))
