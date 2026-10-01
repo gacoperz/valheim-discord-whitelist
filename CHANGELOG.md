@@ -1,5 +1,17 @@
 # Changelog
 
+## Unreleased
+No database changes and nothing to do by hand.
+
+- **Liveness probe only.** `bot/a2s.py` no longer parses A2S replies: any reply or no reply means online, "port
+  unreachable" means offline. Before, a reply the parser didn't expect made every poll fail. Player count and
+  version now always come from the events log, also on a public server.
+- **World save shorter than its 12-byte header** (e.g. while the game writes it): the status embed leaves out the
+  in-game day instead of failing with `struct.error`.
+- **Alert DMs** show 24 h or more as days and hours ("2d 2h" instead of "50h 5m").
+- Code with one caller is folded into it (`bot/world.py`, `bot/web.py`, `bot/orphans.py`); new tests cover the
+  probe, the in-game day and the status embed.
+
 ## v1.1.2
 **Upgrading:** check out the tag and run `docker compose up -d --build`. The bot's behaviour is unchanged; this
 release is documentation, metadata and CI. No database changes and nothing to do by hand.

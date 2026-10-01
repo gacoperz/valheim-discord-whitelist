@@ -3,17 +3,9 @@ import glob
 import os
 import struct
 from collections.abc import Callable
-from dataclasses import dataclass
 from typing import NamedTuple
 
 DAY_LENGTH = 1800.0  # seconds of world time per in-game day
-
-
-@dataclass
-class WorldSave:
-    path: str
-    saved_at: float  # file mtime (unix time)
-    net_time: float  # world time in seconds at save
 
 
 class WorldDay(NamedTuple):
@@ -21,29 +13,19 @@ class WorldDay(NamedTuple):
     saved_at: int  # unix time of the save it is based on
 
 
-def latest_save(world_dir: str) -> WorldSave | None:
-    files = glob.glob(os.path.join(world_dir, "*.db2")) + glob.glob(os.path.join(world_dir, "*.db"))
-    if not files:
-        return None
-    path = max(files, key=os.path.getmtime)
-    with open(path, "rb") as f:
-        _version, net_time = struct.unpack("<id", f.read(12))
-    return WorldSave(path, os.path.getmtime(path), net_time)
-
-
-def day_of(net_time: float) -> int:
-    return int(net_time // DAY_LENGTH)
-
-
 def current_day(world_dir: str, online_seconds_since: Callable[[float, float], float],
                 now: float) -> WorldDay | None:
     """Estimate today's day: world time only runs while someone is online, so add the online time
     since the last save to the time stored in that save."""
+    files = glob.glob(os.path.join(world_dir, "*.db2")) + glob.glob(os.path.join(world_dir, "*.db"))
     try:
-        save = latest_save(world_dir)
-    except OSError:
+        path = max(files, key=os.path.getmtime, default=None)
+        if not path:
+            return None
+        saved_at = os.path.getmtime(path)
+        with open(path, "rb") as f:
+            _version, net_time = struct.unpack("<id", f.read(12))
+    except (OSError, struct.error):  # struct.error: shorter than the header, e.g. while the game writes it
         return None
-    if not save:
-        return None
-    net_time = save.net_time + online_seconds_since(save.saved_at, now)
-    return WorldDay(day_of(net_time), int(save.saved_at))
+    net_time += online_seconds_since(saved_at, now)
+    return WorldDay(int(net_time // DAY_LENGTH), int(saved_at))

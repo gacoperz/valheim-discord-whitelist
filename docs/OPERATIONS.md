@@ -81,7 +81,8 @@ Internet ──443/tcp──► Caddy ──────────────
   a line it can't process is logged and skipped). The file only grows, about a few KB a day; the bot never
   rotates it (it is mounted read-only), and if you truncate or replace it the bot starts again from the top.
 - **Online/offline:** an unlisted server doesn't answer Steam (A2S) queries, so the bot sends a UDP probe to
-  port 2457: no reply means listening (online); "port unreachable" means down.
+  port 2457: a reply or no reply means listening (online); "port unreachable" means down. Player count and
+  version always come from the events log, also on a public server.
 - **In-game day:** the world time in the latest save, plus the time players were online since.
 - **Whitelist linking:** Discord OAuth2 with the scopes `identify` and `connections`. The bot checks that the same
   Discord user started the link (a one-time, 10-minute token), that they're a member of an allowed server, and

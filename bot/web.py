@@ -4,7 +4,6 @@ import logging
 import secrets
 import sqlite3
 import time
-from dataclasses import dataclass
 from urllib.parse import urlencode
 
 import aiohttp
@@ -88,12 +87,6 @@ class RateLimiter:
         return allowed
 
 
-@dataclass
-class Identity:
-    user_id: str
-    connections: list[dict]
-
-
 class Refusal(Exception):
     """Stops the callback early and shows `response` to the user."""
 
@@ -152,13 +145,13 @@ class OAuth:
             if request.query.get("error"):
                 return self.page("✋", "Cancelled", "Nothing was changed. " + TRY_AGAIN)
             discord_id, guild_id = self._claim_state(request)
-            identity = await self._fetch_identity(request.query["code"])
-            if identity.user_id != str(discord_id):
+            user_id, connections = await self._fetch_identity(request.query["code"])
+            if user_id != str(discord_id):
                 raise self.refuse("🚫", "Wrong Discord account",
                                   "You authorized with a different Discord account than the one that clicked "
                                   "<b>Join whitelist</b>. Log into the right account and try again.", 403)
             member = await self._member(guild_id, discord_id)
-            steamid, steam_name = self._verified_steam(identity)
+            steamid, steam_name = self._verified_steam(connections)
             self._check_not_linked_elsewhere(steamid, discord_id)
             self._check_not_blocked(steamid, discord_id)
             self.whitelist.link(discord_id, str(member), guild_id, steamid, steam_name)
@@ -195,8 +188,8 @@ class OAuth:
                               f"{html.escape(self.cfg.server_name)} Discord servers.", 403)
         return discord_id, guild_id
 
-    async def _fetch_identity(self, code: str) -> Identity:
-        """Swap the code for a token, read the user and their connections, then revoke the token."""
+    async def _fetch_identity(self, code: str) -> tuple[str, list[dict]]:
+        """Swap the code for a token, read the user id and their connections, then revoke the token."""
         auth = aiohttp.BasicAuth(str(self.client_id), self.cfg.client_secret)
         async with aiohttp.ClientSession(timeout=HTTP_TIMEOUT) as http:
             async with http.post(f"{API}/oauth2/token", auth=auth, data={
@@ -218,7 +211,7 @@ class OAuth:
                     log.warning("could not revoke the token: %s", exc)
         if me is None or not isinstance(connections, list):
             raise self._login_failed()
-        return Identity(str(me.get("id")), connections)
+        return str(me.get("id")), connections
 
     def _login_failed(self) -> Refusal:
         return self.refuse("⚠️", "Discord login failed", TRY_AGAIN, 502)
@@ -241,8 +234,8 @@ class OAuth:
         raise self.refuse("🚫", "Not a member",
                           f"You need to be in the {html.escape(self.cfg.server_name)} Discord.", 403)
 
-    def _verified_steam(self, identity: Identity) -> tuple[str, str]:
-        steam = [connection for connection in identity.connections
+    def _verified_steam(self, connections: list[dict]) -> tuple[str, str]:
+        steam = [connection for connection in connections
                  if connection.get("type") == "steam" and connection.get("verified")]
         if not steam:
             raise self.refuse("🔗", "No Steam account linked",

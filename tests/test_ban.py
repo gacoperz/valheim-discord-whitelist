@@ -87,8 +87,7 @@ def test_login_page_refuses_a_banned_steam_account(bot, tmp_path):
                   OAuthStates(bot.whitelist.db), cfg, 42)
 
     async def identity(code):
-        return SimpleNamespace(user_id="9", connections=[{"type": "steam", "verified": True, "id": ALICE,
-                                                          "name": "Alice"}])
+        return "9", [{"type": "steam", "verified": True, "id": ALICE, "name": "Alice"}]
     oauth._fetch_identity = identity
     request = SimpleNamespace(query={"code": "c", "state": oauth.states.create(9, 1)}, headers={}, remote="1.2.3.4")
     response = asyncio.run(oauth.callback(request))

@@ -37,33 +37,33 @@ def test_fmt_duration(seconds, text):
 
 def test_server_goes_offline_only_after_repeated_failed_probes():
     server = ServerState()
-    server.record_probe(object(), 100)
-    server.record_probe(None, 130)
+    server.record_probe(True, 100)
+    server.record_probe(False, 130)
     assert server.online  # one miss is tolerated
-    server.record_probe(None, 160)
+    server.record_probe(False, 160)
     assert not server.online and not server.confirmed_offline
-    server.record_probe(None, 190)
+    server.record_probe(False, 190)
     assert server.confirmed_offline
 
 
 def test_offline_since_is_the_first_failed_probe():
     """Stale sessions are closed at this time, and the offline alert counts from it."""
     server = ServerState()
-    server.record_probe(object(), 100)
+    server.record_probe(True, 100)
     for probe_time in (130, 160, 190):
-        server.record_probe(None, probe_time)
+        server.record_probe(False, probe_time)
     assert server.offline_since == 130 and server.last_ok == 100
     assert server.offline_for(700) == 570
-    server.record_probe(object(), 720)
+    server.record_probe(True, 720)
     assert server.offline_since is None and server.offline_for(750) == 0
 
 
 def test_a_single_failed_probe_does_not_count_as_offline():
     server = ServerState()
-    server.record_probe(object(), 100)
-    server.record_probe(None, 130)
+    server.record_probe(True, 100)
+    server.record_probe(False, 130)
     assert server.offline_for(1000) == 0  # still online
-    server.record_probe(object(), 160)
+    server.record_probe(True, 160)
     assert server.offline_since is None
 
 

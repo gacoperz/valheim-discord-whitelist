@@ -4,6 +4,7 @@ import time
 from enum import StrEnum
 
 from .config import EVENTS_STALE_SECONDS, OFFLINE_ALERT_SECONDS, POLL_SECONDS
+from .embeds import fmt_duration
 from .server import ServerState
 from .store import StateKey, Store
 from .whitelist import Whitelist
@@ -16,11 +17,6 @@ class Alert(StrEnum):
     EVENTS_STALE = "events_stale"
 
 
-def _ago(seconds: float) -> str:
-    hours, minutes = divmod(int(seconds) // 60, 60)
-    return f"{hours}h {minutes}m" if hours else f"{minutes}m"
-
-
 def active_alerts(server_name: str, server: ServerState, store: Store, whitelist: Whitelist,
                   now: float) -> dict[Alert, str]:
     """Every alert whose condition holds right now, with the DM text that announces it."""
@@ -29,7 +25,7 @@ def active_alerts(server_name: str, server: ServerState, store: Store, whitelist
     if offline_for >= OFFLINE_ALERT_SECONDS:
         seen = f" Last seen online <t:{int(server.last_ok)}:R>." if server.last_ok else ""
         alerts[Alert.SERVER_OFFLINE] = (
-            f"🔴 **{server_name} has been offline for {_ago(offline_for)}.**{seen} Check it with "
+            f"🔴 **{server_name} has been offline for {fmt_duration(offline_for)}.**{seen} Check it with "
             "`docker ps` and `docker compose logs --tail 50 valheim` in /opt/valheim.")
     if whitelist.write_error:
         alerts[Alert.WHITELIST_WRITE] = (
@@ -39,7 +35,7 @@ def active_alerts(server_name: str, server: ServerState, store: Store, whitelist
     started = store.get(StateKey.SERVER_STARTED)
     if server.online and started and now - started > EVENTS_STALE_SECONDS:
         alerts[Alert.EVENTS_STALE] = (
-            f"⚠️ **{server_name}: no server restart in the events log for {_ago(now - started)}**, although the "
+            f"⚠️ **{server_name}: no server restart in the events log for {fmt_duration(now - started)}**, although the "
             "server restarts daily at 05:10 when empty. The log copy to `config/bot/events.log` is probably "
             "broken, so player sessions and stats aren't being recorded. Check "
             "`VALHEIM_LOG_FILTER_REGEXP_DiscordBot` in the Valheim compose.")
@@ -54,4 +50,4 @@ RECOVERED = {
 
 
 def recovered_text(alert: Alert, server_name: str, alerted_at: float, now: float | None = None) -> str:
-    return RECOVERED[alert].format(name=server_name, ago=_ago((now or time.time()) - alerted_at))
+    return RECOVERED[alert].format(name=server_name, ago=fmt_duration((now or time.time()) - alerted_at))

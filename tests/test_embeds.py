@@ -101,3 +101,25 @@ def test_leaderboard_labels_shared_names_with_the_steam_id_end(store, tmp_path):
     text = leaderboard_reply(SimpleNamespace(server_name="Midgard"), store)["embed"].description
     assert f"Bob (Steam …{ALICE[-4:]})" in text and f"Bob (Steam …{STRANGER[-4:]})" in text
     assert "**Carol**" in text  # unique names stay plain
+
+
+def test_status_embed_takes_players_and_version_from_the_events_log(store, tmp_path):
+    from bot.config import Config
+    from bot.embeds import status_embed
+    from bot.server import ServerState
+
+    cfg = Config(token="t", client_secret="", public_url="", server_name="H", join_address="", a2s_host="h",
+                 a2s_port=1, max_players=10, events_log="", world_dir=str(tmp_path), db_path="", whitelist_file="",
+                 motd_file="", protected_steamids=(), allowed_guilds=frozenset(), notify_user_id=None)
+    now = int(time.time())
+    ingest(store, tmp_path, f"{now - 60} Valheim version: l-0.217.46", f"{now - 50} Got handshake from client {ALICE}",
+           f"{now - 40} Got character ZDOID from Alice : 5:1")
+    server = ServerState()
+    server.record_probe(True)
+    fields = {field.name: field.value for field in status_embed(cfg, server, store).fields}
+    assert fields["Players 1/10"].startswith("• **Alice**") and fields["Version"] == "0.217.46"
+
+    server.record_probe(False)
+    server.record_probe(False)
+    fields = {field.name: field.value for field in status_embed(cfg, server, store).fields}
+    assert "Version" not in fields and not any(name.startswith("Players") for name in fields)
