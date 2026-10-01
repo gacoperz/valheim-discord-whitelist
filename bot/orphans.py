@@ -5,14 +5,10 @@ when they leave that server, so the admin is DM'd once per entry.
 """
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass
-from typing import Protocol
+
+import discord
 
 from .whitelist import WhitelistEntry
-
-
-class Guild(Protocol):  # the parts of discord.Guild used here
-    id: int
-    name: str
 
 
 @dataclass(frozen=True)
@@ -23,7 +19,8 @@ class Orphan:
 
 
 def find_orphans(entries: Iterable[WhitelistEntry], allowed_guilds: frozenset[int],
-                 get_guild: Callable[[int], Guild | None], left_guild: Guild | None = None) -> list[Orphan]:
+                 get_guild: Callable[[int], discord.Guild | None],
+                 left_guild: discord.Guild | None = None) -> list[Orphan]:
     """Linked entries whose Discord server the bot is not in, or that is not in ALLOWED_GUILDS.
     `left_guild` is the server the bot was just removed from, so the DM can still name it."""
     orphans = []

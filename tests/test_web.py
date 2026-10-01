@@ -38,7 +38,7 @@ def setup(tmp_path):
 
 
 def identity(user_id=ALICE, steam=({"type": "steam", "verified": True, "id": STEAM, "name": "Alice"},)):
-    return SimpleNamespace(user_id=str(user_id), connections=list(steam))
+    return str(user_id), list(steam)
 
 
 def visit(setup, query, who=None):
