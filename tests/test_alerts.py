@@ -112,3 +112,9 @@ def test_failed_dm_is_retried_later_not_every_poll(store, whitelist):
     bot._alert_dm_retry_at = 0.0
     check(bot)
     assert len(bot.sent) == 1
+
+
+def test_alert_durations_use_days_past_24_hours(store, whitelist):
+    store.set(StateKey.SERVER_STARTED, int(NOW) - 50 * 3600 - 300)
+    text = active_alerts("Midgard", online_server(), store, whitelist, NOW)[Alert.EVENTS_STALE]
+    assert "for 2d 2h**" in text
