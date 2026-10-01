@@ -1,6 +1,7 @@
 """Everything the bot says: fixed reply texts, and the functions that build embeds and replies.
 Functions returning a dict give keyword arguments for `send_message`."""
 import time
+from collections import Counter
 
 import discord
 
@@ -93,10 +94,8 @@ def character_label(row: PlayerStats, name_is_shared: bool) -> str:
 
 def shared_names(rows: list[PlayerStats]) -> set[str]:
     """Character names (case-insensitive) used from more than one Steam account."""
-    seen: dict[str, int] = {}
-    for row in rows:
-        seen[row.name.lower()] = seen.get(row.name.lower(), 0) + 1
-    return {name for name, count in seen.items() if count > 1}
+    counts = Counter(row.name.lower() for row in rows)
+    return {name for name, count in counts.items() if count > 1}
 
 
 def leaderboard_reply(cfg: Config, store: Store) -> dict:
