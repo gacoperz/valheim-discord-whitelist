@@ -191,7 +191,7 @@ class Bot(discord.Client):
     async def poll_once(self):
         if count := self.store.ingest(self.cfg.events_log):
             log.info("ingested %d event lines", count)
-        self.server.record_probe(await self.server_info())
+        self.server.record_probe(await self.server_up())
         if self.server.confirmed_offline and self.store.online():
             # the log had no clean disconnect (crash, container restart): end sessions at the first failed probe
             closed = self.store.close_all(int(self.server.offline_since))
@@ -207,24 +207,17 @@ class Bot(discord.Client):
     async def before_poll(self):
         await self.wait_until_ready()
 
-    async def server_info(self) -> a2s.ServerInfo | None:
-        """Probe the game server: None if it is down, else its info. A public server answers A2S with its
-        info; an unlisted one (ours) only proves it is up, so the info is built from the events log instead
-        (players online, version)."""
+    async def server_up(self) -> bool:
         try:
-            online, info = await asyncio.to_thread(a2s.probe, self.cfg.a2s_host, self.cfg.a2s_port)
+            return await asyncio.to_thread(a2s.probe, self.cfg.a2s_host, self.cfg.a2s_port)
         except OSError as exc:
             log.debug("probe failed: %s", exc)
-            return None
-        if not online:
-            return None
-        return info or a2s.ServerInfo(self.cfg.server_name, len(self.store.online()), self.cfg.max_players,
-                                      self.store.get(StateKey.VERSION, ""))
+            return False
 
     async def update_presence(self):
-        info = self.server.info
-        if info:
-            text, status = f"{info.players}/{info.max_players} on {self.cfg.server_name}", discord.Status.online
+        if self.server.online:
+            players = len(self.store.online())
+            text, status = f"{players}/{self.cfg.max_players} on {self.cfg.server_name}", discord.Status.online
         else:
             text, status = f"{self.cfg.server_name} offline", discord.Status.dnd
         if text != self._presence:

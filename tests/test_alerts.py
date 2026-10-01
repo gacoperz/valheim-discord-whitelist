@@ -29,7 +29,7 @@ def whitelist(tmp_path, store):
 
 def online_server():
     server = ServerState()
-    server.record_probe(object())
+    server.record_probe(True)
     return server
 
 
@@ -37,7 +37,7 @@ def offline_server(seconds, now=NOW):
     """A server whose probes have failed every poll for `seconds` up to `now`."""
     server = online_server()
     for probe_time in range(int(now - seconds), int(now) + 1, POLL_SECONDS):
-        server.record_probe(None, probe_time)
+        server.record_probe(False, probe_time)
     return server
 
 

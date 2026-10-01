@@ -54,34 +54,30 @@ def status_embed(cfg: Config, server: ServerState, store: Store, *, join_steps_f
     """Live server status. With `join_steps_field` (the dashboard) it also shows the message of the day and
     explains how to join."""
     now = time.time()
-    info = server.info
-    if info:
+    online = server.online
+    if online:
         embed = discord.Embed(title=f"🟢 {cfg.server_name} is online", colour=discord.Colour.green())
         players = store.online()
-        if players:
-            lines = "\n".join(f"• **{name}** — {fmt_duration(now - start)}" for name, start in players)
-        elif info.players:
-            lines = "*(names appear after their next login)*"
-        else:
-            lines = "*Nobody online*"
-        embed.add_field(name=f"Players {info.players}/{info.max_players}", value=lines, inline=False)
+        lines = "\n".join(f"• **{name}** — {fmt_duration(now - start)}" for name, start in players)
+        embed.add_field(name=f"Players {len(players)}/{cfg.max_players}", value=lines or "*Nobody online*",
+                        inline=False)
     else:
         embed = discord.Embed(title=f"🔴 {cfg.server_name} is offline", colour=discord.Colour.red())
 
     if day := current_day(cfg.world_dir, store.online_seconds_since, now):
         embed.add_field(name="In-game day", value=f"Day **{day.number}**", inline=True)
         embed.add_field(name="Last world save", value=f"<t:{day.saved_at}:R>", inline=True)
-    if info and (started := store.get(StateKey.SERVER_STARTED)):
+    if online and (started := store.get(StateKey.SERVER_STARTED)):
         embed.add_field(name="Server up since", value=f"<t:{started}:R>", inline=True)
-    if info and info.version:
-        embed.add_field(name="Version", value=info.version, inline=True)
+    if online and (version := store.get(StateKey.VERSION)):
+        embed.add_field(name="Version", value=version, inline=True)
     if join_steps_field:
         if about := motd.load(cfg.motd_file):
             embed.add_field(name=f"📜 About {cfg.server_name}", value=motd.for_embed(about), inline=False)
         embed.add_field(name="🛡️ How to join (whitelist only)", value=join_steps(cfg), inline=False)
     elif cfg.join_address:
         embed.add_field(name="Join (Add server)", value=f"`{cfg.join_address}`", inline=True)
-    if not info and server.last_ok:
+    if not online and server.last_ok:
         embed.add_field(name="Last seen online", value=f"<t:{int(server.last_ok)}:R>", inline=True)
     embed.set_footer(text="Updated")
     embed.timestamp = discord.utils.utcnow()

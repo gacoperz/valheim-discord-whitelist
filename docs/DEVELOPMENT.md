@@ -11,7 +11,7 @@
 | `bot/store.py` | Events log parser, sessions, deaths, failed joins, bot state (SQLite). |
 | `bot/whitelist.py` | Whitelist entries, audit history, writing `permittedlist.txt`. |
 | `bot/web.py` | The OAuth return page and its one-time link tokens. |
-| `bot/server.py`, `bot/a2s.py` | What the bot knows about the game server; the UDP/A2S probe. |
+| `bot/server.py`, `bot/a2s.py` | What the bot knows about the game server; the UDP liveness probe. |
 | `bot/world.py` | In-game day from the world save header. |
 | `bot/alerts.py`, `bot/orphans.py` | Admin alert conditions; whitelist entries from servers the bot can't serve. |
 | `bot/motd.py` | The message of the day. |
